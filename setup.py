@@ -40,18 +40,20 @@ def build_extensions() -> list[Extension]:
     except ImportError:
         return []
 
-    exts = [
-        Extension(
-            "peovim._native.cell_grid",
-            ["peovim/_native/cell_grid.pyx"],
-            extra_compile_args=["/O2"] if sys.platform == "win32" else ["-O3"],
-        ),
-        Extension(
-            "peovim._native.window_renderer",
-            ["peovim/_native/window_renderer.pyx"],
-            extra_compile_args=["/O2"] if sys.platform == "win32" else ["-O3"],
-        ),
+    import os
+
+    candidates = [
+        ("peovim._native.cell_grid", "peovim/_native/cell_grid.pyx"),
+        ("peovim._native.window_renderer", "peovim/_native/window_renderer.pyx"),
     ]
+    compile_args = ["/O2"] if sys.platform == "win32" else ["-O3"]
+    exts = [
+        Extension(name, [src], extra_compile_args=compile_args)
+        for name, src in candidates
+        if os.path.exists(src)
+    ]
+    if not exts:
+        return []
     return cythonize(
         exts,
         compiler_directives={
