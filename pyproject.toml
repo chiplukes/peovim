@@ -1,0 +1,115 @@
+[project]
+name = "peovim"
+dynamic = ["version"]
+description = "A fast, modern, cross-platform modal text editor"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Chip Lukes" }]
+keywords = ["editor", "modal", "vim", "neovim", "terminal", "tui"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Editors",
+]
+requires-python = ">=3.13"
+dependencies = [
+    "prompt-toolkit>=3.0",
+    "tree-sitter>=0.22",
+    "rapidfuzz>=3.0",
+    "platformdirs>=4.0",
+    "editorconfig",
+    "charset-normalizer",
+    "msgpack",
+    "portalocker>=2.0",
+    "pyte>=0.8.2",
+    # Tree-sitter grammars — kept in main deps so plain `uv sync` never removes them
+    "tree-sitter-python",
+    "tree-sitter-javascript",
+    "tree-sitter-typescript",
+    "tree-sitter-rust",
+    "tree-sitter-c",
+    "tree-sitter-cpp",
+    "tree-sitter-go",
+    "tree-sitter-lua",
+    "tree-sitter-json",
+    "tree-sitter-yaml",
+    "tree-sitter-toml",
+    "tree-sitter-markdown",
+    "tree-sitter-bash",
+    "tree-sitter-verilog",
+]
+
+[project.optional-dependencies]
+# grammars extra kept for backward compat but grammars are now in main deps
+grammars = []
+# uv sync --extra native  (requires a C compiler to actually build)
+native = ["cython>=3.0"]
+# uv sync --extra fast
+fast = [
+    "pygit2",   # faster git queries vs subprocess
+    "jedi",     # offline Python completion fallback before LSP attaches
+]
+# uv sync --extra dev  (or: uv sync --all-extras)
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "scalene",  # CPU+memory profiler for Phase 9 optimisation
+    "ruff",
+    "ty",       # fast Python type checker (Astral)
+    "pre-commit",
+]
+
+[project.urls]
+Homepage = "https://github.com/chiplukes/peovim"
+Repository = "https://github.com/chiplukes/peovim"
+"Bug Tracker" = "https://github.com/chiplukes/peovim/issues"
+
+[project.scripts]
+peovim = "peovim.main:main"
+
+[build-system]
+requires = ["setuptools>=75", "cython>=3.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {attr = "peovim.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["peovim*"]
+
+[tool.setuptools.package-data]
+"peovim.syntax.queries" = ["*.scm"]
+
+# ---------------------------------------------------------------------------
+# Ruff — linter and formatter
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",   # line length enforced by formatter, not linter
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["peovim"]
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "setuptools>=82.0.1",
+]

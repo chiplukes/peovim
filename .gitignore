@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Cython generated files
+peovim/_native/*.c
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv/
+
+# Type checkers
+.mypy_cache/
+.ruff_cache/
+.ty_cache/
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Profiling (scalene)
+*.prof
+*.lprof
+scalene_*.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor runtime data
+.peovim/
+*.shada
+*.shada.tmp.*
+
+# Tree-sitter compiled grammars
+*.dylib
+
+# Logs
+*.log
+
+.claude/*
+.tmp/*
