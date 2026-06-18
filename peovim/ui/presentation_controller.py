@@ -39,6 +39,10 @@ class OverlayPresentationController:
             host._invalidate("full")
             return True
 
+        if self.handle_bottom_panel_navigation_key(key):
+            host._invalidate("full")
+            return True
+
         open_trees = [handle for handle in host._tree_views if getattr(handle, "is_open", False)]
         if open_trees:
             open_trees[-1].tree.feed_key(key)
@@ -120,6 +124,22 @@ class OverlayPresentationController:
             return True
         if _is_plug_key("SidebarPrevPanel"):
             sidebar.prev_panel(focus=True)
+            return True
+        return False
+
+    def handle_bottom_panel_navigation_key(self, key: str) -> bool:
+        """Focus the bottom panel with <A-j> when it is visible but not focused."""
+        host = self._host
+        bp = host._bottom_panel
+        if bp is None or not getattr(bp, "_visible", False) or getattr(bp, "_focused", False):
+            return False
+
+        registry = getattr(host, "_binding_registry", None)
+        if registry is None:
+            return False
+
+        if key in registry.find_keys_for_plug("SidebarNextPanel", mode="normal"):
+            bp.show_active_tab(focus=True)
             return True
         return False
 

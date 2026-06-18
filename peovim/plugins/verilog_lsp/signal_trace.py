@@ -131,7 +131,7 @@ def trace_signal_under_cursor(api: EditorAPI) -> None:
             "arguments": [params],
         },
         cb=_on_result,
-        cmd_contains="verilog_lsp",
+        cmd_contains="veriforge-lsp",
     )
 
 

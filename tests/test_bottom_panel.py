@@ -289,6 +289,17 @@ class TestLogOutputTab:
         assert tab.feed_key("<Esc>")
         assert not tab._visual
 
+    def test_lowercase_v_enters_visual_mode(self):
+        tab = LogOutputTab()
+        for i in range(5):
+            tab.add_line(f"line {i}", 20)
+        tab._cursor = 1
+        tab._auto_scroll = False
+
+        assert tab.feed_key("v")
+        assert tab._visual
+        assert tab._visual_anchor == 1
+
     def test_yank_current_line(self):
         yanked: list[str] = []
         tab = LogOutputTab()
@@ -319,6 +330,34 @@ class TestLogOutputTab:
         assert len(yanked) == 1
         assert yanked[0] == "line 1\nline 2\nline 3"
         assert not tab._visual  # visual mode cleared after yank
+
+    def test_visual_selection_survives_deque_overflow(self):
+        """Visual anchor/cursor must stay on the same items when old lines are dropped."""
+        yanked: list[str] = []
+        tab = LogOutputTab()
+        tab.yank_fn = yanked.append
+
+        # Fill deque to capacity
+        for i in range(tab._MAX_LINES):
+            tab.add_line(f"old {i}", 20)
+
+        # User navigates to an item near the end and enters visual mode
+        tab._auto_scroll = False
+        tab._cursor = tab._MAX_LINES - 3  # near the end
+        tab.feed_key("V")  # anchor = _MAX_LINES - 3
+        tab.feed_key("j")  # cursor = _MAX_LINES - 2
+        tab.feed_key("j")  # cursor = _MAX_LINES - 1
+
+        # Now overflow: add more lines, dropping old items from the front
+        for i in range(5):
+            tab.add_line(f"new {i}", 20)
+
+        # Selection should still span 3 lines at the (adjusted) anchor+cursor
+        tab.feed_key("y")
+
+        assert len(yanked) == 1
+        lines = yanked[0].splitlines()
+        assert len(lines) == 3
 
     def test_yank_all_lines(self):
         yanked: list[str] = []

@@ -21,7 +21,7 @@ def reparse(api):  # type: ignore[no-untyped-def]
         "workspace/executeCommand",
         {"command": "verilog.reparse", "arguments": []},
         cb=lambda _r: None,
-        cmd_contains="verilog_lsp",
+        cmd_contains="veriforge-lsp",
     )
 
 

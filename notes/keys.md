@@ -135,7 +135,7 @@ keymap.nmap("<leader>sg", "<Plug>PickerLiveGrep",    desc="Live grep")
 |-----|---------|--------|
 | `<A-h>` | `SidebarFocusLeft` | Focus sidebar (or window left when sidebar hidden) |
 | `<A-l>` | `SidebarFocusRight` | Focus editor (or window right) |
-| `<A-j>` | `SidebarNextPanel` | Next sidebar panel (or window down when editor focused) |
+| `<A-j>` | `SidebarNextPanel` | Next sidebar panel; if bottom panel is visible and unfocused, focuses it instead |
 | `<A-k>` | `SidebarPrevPanel` | Previous sidebar panel (or window up when editor focused) |
 | `<A-p>` | `BottomPanelToggle` | Toggle bottom panel |
 
@@ -151,7 +151,7 @@ keymap.nmap("<leader>sg", "<Plug>PickerLiveGrep",    desc="Live grep")
 
 | Key | Action |
 |-----|--------|
-| `<Esc>` | Blur panel (keep visible) |
+| `<Esc>` / `<A-k>` | Blur panel, return focus to editor (panel stays visible) |
 | `q` | Hide panel |
 | `[` / `]` | Shrink / grow panel height |
 | `<` / `>` | Previous / next tab |
@@ -163,10 +163,11 @@ keymap.nmap("<leader>sg", "<Plug>PickerLiveGrep",    desc="Live grep")
 | `j` / `k` | Move cursor down / up |
 | `<C-d>` / `<C-u>` | Scroll down / up 10 lines |
 | `g` / `G` | Jump to top / bottom |
-| `V` | Toggle visual line selection |
+| `v` / `V` | Toggle visual line selection; cursor line brightens as the active end; `j`/`k` extend the selection |
 | `y` | Yank selection to clipboard (`+` register) |
-| `Y` | Yank all lines to clipboard |
+| `Y` | Yank **all** lines to clipboard |
 | `c` | Clear output |
+
 
 ---
 

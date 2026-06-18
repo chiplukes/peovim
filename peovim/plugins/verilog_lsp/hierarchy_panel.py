@@ -532,7 +532,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             "workspace/executeCommand",
             {"command": "verilog/setTopModule", "arguments": [{"moduleName": module_name}]},
             cb=lambda result: self._on_set_top_module(result),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
 
     def _clear_pin(self) -> None:
@@ -540,7 +540,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             "workspace/executeCommand",
             {"command": "verilog/setTopModule", "arguments": [{"moduleName": None}]},
             cb=lambda result: self._on_set_top_module(result),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
 
     def _on_set_top_module(self, result: dict | None) -> None:
@@ -597,7 +597,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
                     ],
                 },
                 cb=lambda result: self._on_collapse_preview(result, apply_edit=False),
-                cmd_contains="verilog_lsp",
+                cmd_contains="veriforge-lsp",
             )
             return
         if not hierarchy_path:
@@ -624,7 +624,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             "workspace/executeCommand",
             {"command": "verilog/previewHierarchyBoundaryMove", "arguments": [request]},
             cb=lambda result: self._on_boundary_move_preview(result, apply_edit=apply_edit),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
 
     def _prompt_push_down(self, node: Any, *, apply_edit: bool) -> None:
@@ -713,7 +713,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             "workspace/executeCommand",
             {"command": "verilog/previewHierarchyBoundaryMove", "arguments": [request]},
             cb=lambda result: self._on_extract_preview(result, apply_edit=apply_edit),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
 
     def request_push_down_from_command(self, args: str, *, apply_edit: bool) -> None:
@@ -761,7 +761,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             "workspace/executeCommand",
             {"command": "verilog/previewHierarchyBoundaryMove", "arguments": [request]},
             cb=lambda result: self._on_push_down_preview(result, apply_edit=apply_edit),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
 
     def _on_push_down_preview(self, result: dict | None, *, apply_edit: bool) -> None:
@@ -902,7 +902,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             "workspace/executeCommand",
             {"command": "verilog/previewHierarchyBoundaryMove", "arguments": [request]},
             cb=lambda result: self._on_extract_preview(result, apply_edit=False),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
 
     def _apply_extract(self, line_range: tuple[int, int] | None = None) -> None:
@@ -918,7 +918,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             "workspace/executeCommand",
             {"command": "verilog/previewHierarchyBoundaryMove", "arguments": [request]},
             cb=lambda result: self._on_boundary_move_preview(result, apply_edit=False),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
 
     def _apply_pull_up_selection(self, line_range: tuple[int, int] | None = None) -> None:
@@ -1128,7 +1128,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             "workspace/executeCommand",
             {"command": "verilog/hierarchyGraph", "arguments": [{"format": "json"}]},
             cb=lambda result: self._on_candidate_graph(result),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
 
     def _on_candidate_graph(self, result: dict | None) -> None:
@@ -1219,7 +1219,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
                 "arguments": [{"moduleName": module_name, "instancePath": instance_path or module_name}],
             },
             cb=lambda result: self._on_children_loaded(result),
-            cmd_contains="verilog_lsp",
+            cmd_contains="veriforge-lsp",
         )
         return [TreeNode(label="Loading\u2026", value=None)]
 

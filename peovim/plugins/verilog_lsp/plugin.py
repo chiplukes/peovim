@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 _VERILOG_FT = "verilog"
 _LSP_CMD = ["veriforge-lsp"]
-_ROOT_MARKERS = [".git", "Makefile", "*.f", ".verilog_lsp.json"]
+_ROOT_MARKERS = [".git", "Makefile", "*.f", ".veriforge_lsp.json"]
 
 # In-memory state (not persisted — PluginStore is JSON-only)
 _state: dict = {}  # type: ignore[type-arg]
@@ -208,7 +208,7 @@ def _reparse(api: EditorAPI) -> None:
         "workspace/executeCommand",
         {"command": "verilog.reparse", "arguments": []},
         cb=lambda _r: None,
-        cmd_contains="verilog_lsp",
+        cmd_contains="veriforge-lsp",
     )
 
 

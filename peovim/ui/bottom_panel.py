@@ -77,6 +77,7 @@ class BottomPanelHost(PanelHost):  # cm:4b3d2a
             "]": "BottomPanelGrow",
             "q": "BottomPanelClose",
             "<Esc>": "BottomPanelBlur",
+            "<A-k>": "BottomPanelBlur",  # Alt+k: go "up" to the editor
             "<": "BottomPanelPrevTab",
             ">": "BottomPanelNextTab",
         }
@@ -326,10 +327,17 @@ class LogOutputTab:
             self._root_handler = None
 
     def add_line(self, text: str, level: int) -> None:
+        was_full = len(self._lines) >= self._MAX_LINES
         self._lines.append((text, level))
         if self._auto_scroll:
             self._cursor = len(self._lines) - 1
             # _scroll is computed at render time once we know the viewport height
+        elif was_full:
+            # An item was dropped from the front of the deque; shift indices so
+            # cursor/anchor/scroll continue to point at the same items.
+            self._cursor = max(0, self._cursor - 1)
+            self._visual_anchor = max(0, self._visual_anchor - 1)
+            self._scroll = max(0, self._scroll - 1)
 
     def clear(self) -> None:
         self._lines.clear()
@@ -391,7 +399,7 @@ class LogOutputTab:
                 return True
             return False  # let BottomPanelHost handle blur
 
-        if key == "V":
+        if key in ("V", "v"):
             self._auto_scroll = False
             self._visual = not self._visual
             if self._visual:
@@ -464,8 +472,11 @@ class LogOutputTab:
             is_cursor = idx == self._cursor
             in_visual = self._visual and lo <= idx <= hi
 
-            if in_visual:
-                bg: tuple = (60, 80, 120)  # selection highlight
+            if in_visual and is_cursor:
+                bg: tuple = (80, 105, 150)  # active end of visual selection
+                fg = (255, 255, 255)
+            elif in_visual:
+                bg = (60, 80, 120)  # selection highlight
                 fg = (230, 230, 230)
             elif is_cursor:
                 bg = (45, 50, 65)  # cursor line, subtle
@@ -478,7 +489,11 @@ class LogOutputTab:
 
         # Mode indicator + scroll % in bottom-right corner
         if grid.height > 0:
-            mode_str = " VISUAL " if self._visual else ""
+            if self._visual:
+                sel_lo, sel_hi = self._selection_range()
+                mode_str = f" VISUAL {sel_hi - sel_lo + 1}L "
+            else:
+                mode_str = ""
             pct_str = f" {int(100 * start / max(1, n - 1))}% " if n > grid.height else ""
             indicator = mode_str + pct_str
             if indicator:
