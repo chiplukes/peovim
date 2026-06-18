@@ -554,10 +554,10 @@ class TestParserLineEndingCommands:
         # Simulate a visual selection of lines 1-2 (0-indexed)
         ctx.engine._last_visual_selection = (Mode.VISUAL_LINE, (1, 0), (2, 0))
         ctx.dispatcher.dispatch([RunExCommand("'<,'>s/foo/bar")])
-        assert ctx.doc.get_line(0) == "foo"   # untouched
-        assert ctx.doc.get_line(1) == "bar"   # substituted
-        assert ctx.doc.get_line(2) == "bar"   # substituted
-        assert ctx.doc.get_line(3) == "foo"   # untouched
+        assert ctx.doc.get_line(0) == "foo"  # untouched
+        assert ctx.doc.get_line(1) == "bar"  # substituted
+        assert ctx.doc.get_line(2) == "bar"  # substituted
+        assert ctx.doc.get_line(3) == "foo"  # untouched
 
     def test_substitute_visual_mark_range_global(self):
         """'<,'>s/pat/rep/g applies to all occurrences within the selection."""

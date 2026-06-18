@@ -141,7 +141,7 @@ keymap.imap("<A-Space>", copilot.trigger,  desc="Request Copilot suggestion")
 
 ## Verilog LSP (`peovim.plugins.verilog_lsp`)
 
-Full Verilog IDE integration using the `verilog-parser` LSP server (`verilog_lsp`).
+Full Verilog IDE integration using the `veriforge` LSP server (`veriforge-lsp`).
 
 ### Files
 
@@ -153,7 +153,7 @@ Full Verilog IDE integration using the `verilog-parser` LSP server (`verilog_lsp
 
 ### Server Integration
 
-The plugin registers `verilog-lsp` as the language server for the `verilog` filetype.
+The plugin registers `veriforge-lsp` as the language server for the `verilog` filetype.
 Filetype detection (`.v`, `.sv`, `.vh`, `.svh` → `"verilog"`) is handled by core.
 
 The server provides standard LSP features (hover, go-to-definition, references, symbols)

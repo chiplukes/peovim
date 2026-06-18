@@ -368,9 +368,9 @@ class TestPieceCoalescing:
     def test_sequential_midfile_stays_compact(self):
         # Typing sequentially at a midfile position should coalesce.
         t = make_table("abcd")  # 1 original piece
-        t.insert(2, b"X")      # split → [ab] [X] [cd]
-        t.insert(3, b"Y")      # extend [X] → [XY], still 3 pieces
-        t.insert(4, b"Z")      # extend [XY] → [XYZ], still 3 pieces
+        t.insert(2, b"X")  # split → [ab] [X] [cd]
+        t.insert(3, b"Y")  # extend [X] → [XY], still 3 pieces
+        t.insert(4, b"Z")  # extend [XY] → [XYZ], still 3 pieces
         assert len(t._pieces) == 3
         assert table_text(t) == "abXYZcd"
 
@@ -510,8 +510,8 @@ class TestIncrementalLineIndex:
 
     def test_get_line_bytes_correct_after_incremental_updates(self):
         t = make_table("foo\nbar\nbaz")
-        t.insert(3, b"!")       # "foo!\nbar\nbaz"  (! at 3, \n at 4, r at 7)
-        t.delete(7, 1)          # "foo!\nba\nbaz"   (delete r at 7)
+        t.insert(3, b"!")  # "foo!\nbar\nbaz"  (! at 3, \n at 4, r at 7)
+        t.delete(7, 1)  # "foo!\nba\nbaz"   (delete r at 7)
         t.insert(t.total_bytes(), b"\nqux")  # "foo!\nba\nbaz\nqux"
         assert t.get_line_bytes(0) == b"foo!"
         assert t.get_line_bytes(1) == b"ba"

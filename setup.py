@@ -11,6 +11,7 @@ Build the extensions in-place (editable install):
     # or manually:
     uv run python setup.py build_ext --inplace
 """
+
 from __future__ import annotations
 
 import sys
@@ -47,11 +48,7 @@ def build_extensions() -> list[Extension]:
         ("peovim._native.window_renderer", "peovim/_native/window_renderer.pyx"),
     ]
     compile_args = ["/O2"] if sys.platform == "win32" else ["-O3"]
-    exts = [
-        Extension(name, [src], extra_compile_args=compile_args)
-        for name, src in candidates
-        if os.path.exists(src)
-    ]
+    exts = [Extension(name, [src], extra_compile_args=compile_args) for name, src in candidates if os.path.exists(src)]
     if not exts:
         return []
     return cythonize(

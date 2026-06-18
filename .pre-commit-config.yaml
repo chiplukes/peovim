@@ -1,7 +1,17 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.5
+# Run ruff via uv so the hook uses the exact version from the lockfile,
+# matching what GitHub CI runs with `uv run ruff check/format`.
+  - repo: local
     hooks:
       - id: ruff
+        name: ruff (legacy alias)
+        entry: uv run ruff check --fix
+        language: system
+        pass_filenames: false
+        types: [python]
       - id: ruff-format
-        args: [--check]
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        pass_filenames: false
+        types: [python]

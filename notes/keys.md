@@ -156,6 +156,18 @@ keymap.nmap("<leader>sg", "<Plug>PickerLiveGrep",    desc="Live grep")
 | `[` / `]` | Shrink / grow panel height |
 | `<` / `>` | Previous / next tab |
 
+### Output tab keys (while output tab is active and focused)
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | Move cursor down / up |
+| `<C-d>` / `<C-u>` | Scroll down / up 10 lines |
+| `g` / `G` | Jump to top / bottom |
+| `V` | Toggle visual line selection |
+| `y` | Yank selection to clipboard (`+` register) |
+| `Y` | Yank all lines to clipboard |
+| `c` | Clear output |
+
 ---
 
 ## Editing Utilities

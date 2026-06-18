@@ -16,7 +16,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
-import sys
+import shutil
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _VERILOG_FT = "verilog"
-_LSP_CMD = [sys.executable, "-m", "verilog_lsp"]
+_LSP_CMD = ["veriforge-lsp"]
 _ROOT_MARKERS = [".git", "Makefile", "*.f", ".verilog_lsp.json"]
 
 # In-memory state (not persisted — PluginStore is JSON-only)
@@ -55,14 +55,9 @@ def setup(api: EditorAPI) -> None:
 
 
 def _register_server(api: EditorAPI) -> None:
-    try:
-        import importlib.util
-
-        if importlib.util.find_spec("verilog_lsp") is None:
-            log.warning("verilog_lsp: 'verilog_lsp' package not found — run: uv pip install -e ../verilog-parser[lsp]")
-            return
-    except Exception:
-        pass
+    if shutil.which("veriforge-lsp") is None:
+        log.warning("verilog_lsp: 'veriforge-lsp' not found — run: uv tool install veriforge")
+        return
     cmd = list(_LSP_CMD)
     rules = _opts.get("verible_rules")
     if rules:

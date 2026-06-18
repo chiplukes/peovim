@@ -39,7 +39,7 @@ Being written entirely in Python this editor is very easy to modify or create pl
 - **Plugin API** — plain Python plugins with event hooks, keymaps, commands, decorations, and sidebar panels
 
 ## Features more unique to my (Verilog, Python) workflow
-- **Verilog LSP** — a custom LSP that allows heirarchy collapse/extract, signal tracing, and more features using [verilog-tools](https://github.com/chiplukes/verilog-parser)
+- **Verilog LSP** — a custom LSP that allows heirarchy collapse/extract, signal tracing, and more features using [veriforge](https://github.com/chiplukes/veriforge)
 
 ## Requirements
 

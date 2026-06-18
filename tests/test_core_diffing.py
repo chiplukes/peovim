@@ -1,4 +1,5 @@
 """Tests for peovim.core.diffing.parse_hunks."""
+
 from __future__ import annotations
 
 from peovim.core.diffing import parse_hunks
@@ -68,8 +69,7 @@ class TestParseHunksChange:
 class TestParseHunksMultiple:
     def test_two_hunks(self):
         diff = (
-            "@@ -1,3 +1,4 @@\n context\n+added\n context\n context\n"
-            "@@ -10,3 +11,2 @@\n context\n-removed\n context\n"
+            "@@ -1,3 +1,4 @@\n context\n+added\n context\n context\n@@ -10,3 +11,2 @@\n context\n-removed\n context\n"
         )
         result = parse_hunks(diff)
         assert len(result) == 2
@@ -102,14 +102,7 @@ class TestParseHunksGitFormat:
 
     def test_git_diff_multi_file(self):
         # Two files in one diff output
-        diff = (
-            "diff --git a/a.py b/a.py\n"
-            "@@ -1,0 +1,1 @@\n"
-            "+in a\n"
-            "diff --git a/b.py b/b.py\n"
-            "@@ -5,0 +6,1 @@\n"
-            "+in b\n"
-        )
+        diff = "diff --git a/a.py b/a.py\n@@ -1,0 +1,1 @@\n+in a\ndiff --git a/b.py b/b.py\n@@ -5,0 +6,1 @@\n+in b\n"
         result = parse_hunks(diff)
         assert result == [_hunk("add", 0, 0), _hunk("add", 5, 5)]
 
