@@ -268,7 +268,7 @@ def setup(api) -> None:  # cm:5b3d7f
         if signature == inlay_state["applied_signature"]:
             return
         pending_since = inlay_state["pending_since"]
-        if isinstance(pending_since, (int, float)) and now - pending_since < 0.15:
+        if isinstance(pending_since, int | float) and now - pending_since < 0.15:
             return
         if callable(refresh_inlay_hints):
             refresh_inlay_hints()
@@ -305,7 +305,7 @@ def setup(api) -> None:  # cm:5b3d7f
         if signature == highlight_state["applied_signature"]:
             return
         pending_since = highlight_state["pending_since"]
-        if isinstance(pending_since, (int, float)) and now - pending_since < 0.5:
+        if isinstance(pending_since, int | float) and now - pending_since < 0.5:
             return
         if callable(refresh_document_highlight):
             refresh_document_highlight()

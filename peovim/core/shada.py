@@ -81,7 +81,7 @@ class ShadaStore:
         try:
             marks = data.get("global_marks", {})
             for name, entry in marks.items():
-                if isinstance(entry, (list, tuple)) and len(entry) == 3:
+                if isinstance(entry, list | tuple) and len(entry) == 3:
                     self._global_marks[str(name)] = (str(entry[0]), int(entry[1]), int(entry[2]))
 
             regs = data.get("registers", [])
@@ -96,14 +96,14 @@ class ShadaStore:
             self._jump_list = [
                 (str(e[0]), int(e[1]), int(e[2]), int(e[3]) if len(e) >= 4 else 0)
                 for e in jl
-                if isinstance(e, (list, tuple)) and len(e) >= 3
+                if isinstance(e, list | tuple) and len(e) >= 3
             ]
 
             self._recent_files = [str(x) for x in data.get("recent_files", [])]
 
             fp = data.get("file_positions", {})
             for path_str, entry in fp.items():
-                if isinstance(entry, (list, tuple)) and len(entry) == 2:
+                if isinstance(entry, list | tuple) and len(entry) == 2:
                     self._file_positions[str(path_str)] = (int(entry[0]), int(entry[1]))
 
             project_trust = data.get("project_trust", {})

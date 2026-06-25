@@ -77,35 +77,41 @@ class TestDetectIndent:
 
     def test_module_docstring_content_is_skipped(self):
         # Module-level docstring with 2-space indented content should not affect detection
-        buf = _make_buf([
-            '"""',
-            "  indented content in docstring",
-            "  more 2-space docstring content",
-            '"""',
-            "def foo():",
-            "    x = 1",
-            "    y = 2",
-        ])
+        buf = _make_buf(
+            [
+                '"""',
+                "  indented content in docstring",
+                "  more 2-space docstring content",
+                '"""',
+                "def foo():",
+                "    x = 1",
+                "    y = 2",
+            ]
+        )
         assert detect_indent(buf) == (True, 4)
 
     def test_function_docstring_content_is_skipped(self):
         # Docstring inside a function with unusual internal indentation should not affect detection
-        buf = _make_buf([
-            "def foo():",
-            '    """',
-            "      Algorithm:",
-            "        step one",
-            '    """',
-            "    code()",
-        ])
+        buf = _make_buf(
+            [
+                "def foo():",
+                '    """',
+                "      Algorithm:",
+                "        step one",
+                '    """',
+                "    code()",
+            ]
+        )
         assert detect_indent(buf) == (True, 4)
 
     def test_oneliner_docstring_is_skipped(self):
-        buf = _make_buf([
-            "def foo():",
-            '    """Short description."""',
-            "    code()",
-        ])
+        buf = _make_buf(
+            [
+                "def foo():",
+                '    """Short description."""',
+                "    code()",
+            ]
+        )
         assert detect_indent(buf) == (True, 4)
 
     def test_block_comment_noise_does_not_override_tab_indentation(self):
