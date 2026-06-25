@@ -465,6 +465,7 @@ native = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pytest" },
     { name = "setuptools" },
 ]
 
@@ -506,7 +507,10 @@ requires-dist = [
 provides-extras = ["grammars", "native", "fast", "dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "setuptools", specifier = ">=82.0.1" }]
+dev = [
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "setuptools", specifier = ">=82.0.1" },
+]
 
 [[package]]
 name = "platformdirs"
