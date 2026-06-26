@@ -45,6 +45,37 @@ def _rebase_repeat_action(dispatcher, action: object) -> object:
         return ReplaceRange(line, col, line, end_col, action.new_text)
 
     if isinstance(action, DeleteRange):
+        # Motion-aware repeat: re-evaluate the motion from the current cursor position
+        if action.motion_fn is not None:
+            line = cursor.line
+            col = min(cursor.col, len(document.get_line(line)))
+            new_line, new_col = action.motion_fn(document, line, col, action.motion_count)
+            # Mirror the range normalization from engine._resolve_operator_motion
+            if action.motion_range_type == "line":
+                start = (min(line, new_line), 0)
+                end = (max(line, new_line), LINE_END)
+            else:
+                start = min((line, col), (new_line, new_col))
+                end = max((line, col), (new_line, new_col))
+                if action.motion_end_exclusive and (line, col) <= (new_line, new_col):
+                    end = (new_line, new_col)
+                    line_text = document.get_line(new_line)
+                    if new_col >= max(0, len(line_text) - 1):
+                        end = (new_line, len(line_text))
+                elif action.motion_end_inclusive:
+                    line_text = document.get_line(end[0])
+                    end = (end[0], min(end[1] + 1, len(line_text)))
+            return DeleteRange(
+                start[0], start[1], end[0], end[1],
+                register=action.register,
+                save_deleted=action.save_deleted,
+                motion_fn=action.motion_fn,
+                motion_count=action.motion_count,
+                motion_range_type=action.motion_range_type,
+                motion_end_exclusive=action.motion_end_exclusive,
+                motion_end_inclusive=action.motion_end_inclusive,
+            )
+        # Fixed-width fallback for non-motion deletes (x, dl, etc.)
         if action.start_line != action.end_line or action.end_col == LINE_END:
             return action
         width = max(0, action.end_col - action.start_col)

@@ -593,6 +593,8 @@ class ModalEngine:  # cm:5c8e7a
                         node.range_type,
                         motion_end_exclusive=node.motion_end_exclusive,
                         motion_end_inclusive=node.motion_end_inclusive,
+                        motion_fn=node.motion_fn,
+                        motion_count=count,
                     )
                     state.reset()
                     return actions
@@ -614,6 +616,8 @@ class ModalEngine:  # cm:5c8e7a
         *,
         motion_end_exclusive: bool = False,
         motion_end_inclusive: bool = False,
+        motion_fn: MotionFn | None = None,
+        motion_count: int = 1,
     ) -> list[Action]:
         """Produce Action(s) for a completed operator+motion pair."""
         LINE_END_VAL = 0x7FFFFFFF
@@ -639,7 +643,15 @@ class ModalEngine:  # cm:5c8e7a
                 end = (end[0], min(end[1] + 1, len(line_text)))
 
         if op == "d":
-            return [DeleteRange(start[0], start[1], end[0], end[1], register=reg, save_deleted=True)]
+            return [DeleteRange(
+                start[0], start[1], end[0], end[1],
+                register=reg, save_deleted=True,
+                motion_fn=motion_fn,
+                motion_count=motion_count,
+                motion_range_type=range_type,
+                motion_end_exclusive=motion_end_exclusive,
+                motion_end_inclusive=motion_end_inclusive,
+            )]
         if op == "y":
             return [YankRange(start[0], start[1], end[0], end[1], register=reg, yank_type=range_type)]
         if op == "c":

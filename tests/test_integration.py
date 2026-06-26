@@ -445,6 +445,25 @@ class TestDotRepeat:
         s.type(".")
         assert s.line(0) == "line3"
 
+    def test_dot_repeats_dw_re_evaluates_motion(self):
+        # dw on "foo bar baz": deletes "foo ", cursor on "bar"
+        # . should delete "bar " (re-evaluate word motion), not a fixed 4-char width
+        s = EditorSession("foo bar baz")
+        s.type("dw")
+        assert s.line(0) == "bar baz"
+        s.type(".")
+        assert s.line(0) == "baz"
+
+    def test_dot_repeats_de_re_evaluates_motion(self):
+        # de on "abc defgh": deletes "abc", cursor on " "
+        # . should delete "defgh" (next word end), not fixed 3-char width
+        s = EditorSession("abc defgh")
+        s.type("de")
+        assert s.line(0) == " defgh"
+        s.type("l")  # move to 'd'
+        s.type(".")
+        assert s.line(0) == " "
+
 
 # ---------------------------------------------------------------------------
 # Quit with unsaved changes
