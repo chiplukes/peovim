@@ -52,6 +52,7 @@ class MouseDispatcher:
         self._drag_active: bool = False  # True while left button is held and dragging
         self._drag_leaf: Any = None  # WindowLeaf the drag started in
         self._drag_rect: Any = None  # screen Rect of that leaf
+        self._drag_entered_visual: bool = False  # True if drag caused us to enter visual mode
         self._scrollbar_drag_active: bool = False
         self._scrollbar_drag_leaf: Any = None
         self._scrollbar_drag_rect: Any = None
@@ -75,11 +76,15 @@ class MouseDispatcher:
                 self._drag(event)
         elif button == 0 and event.pressed:  # left click (press)
             self._drag_active = False
+            self._drag_entered_visual = False
             self._drag_leaf = None
             self._drag_rect = None
             self._click(event)
         elif button == 0 and not event.pressed:  # left release
+            if self._drag_entered_visual:
+                self._exit_visual_if_empty_selection()
             self._drag_active = False
+            self._drag_entered_visual = False
             self._drag_leaf = None
             self._drag_rect = None
             self._scrollbar_drag_active = False
@@ -171,6 +176,7 @@ class MouseDispatcher:
             visual_modes = (Mode.VISUAL_CHAR, Mode.VISUAL_LINE, Mode.VISUAL_BLOCK)
             if mode not in visual_modes:
                 self._dispatcher.dispatch([EnterVisualMode("char")])
+                self._drag_entered_visual = True
             # Record which window the drag started in so we can still reference
             # it if the mouse wanders outside any window rect.
             layout = self._get_layout()
@@ -337,6 +343,21 @@ class MouseDispatcher:
             return default
         global_options = editor_state.options.global_as_dict()
         return global_options.get(name, default)
+
+    def _exit_visual_if_empty_selection(self) -> None:
+        """After a drag release, exit visual mode if no text was actually selected."""
+        from peovim.modal.actions import EnterNormalMode
+        from peovim.modal.engine import Mode
+
+        mode = self._engine.mode
+        visual_modes = (Mode.VISUAL_CHAR, Mode.VISUAL_LINE, Mode.VISUAL_BLOCK)
+        if mode not in visual_modes:
+            return
+        anchor = self._engine._visual_anchor
+        win = self._workspace.active_tab.active_window
+        cur = win.cursor
+        if anchor == (cur.line, cur.col):
+            self._dispatcher.dispatch([EnterNormalMode()])
 
     def _focus_window(self, leaf) -> None:
         tab = self._workspace.active_tab

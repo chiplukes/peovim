@@ -273,3 +273,30 @@ class TestMouseDispatcher:
         md.handle(press)
         md.handle(drag)
         assert window.scroll_line > 0
+
+    def test_drag_that_moves_cursor_keeps_visual_mode(self):
+        from peovim.modal.engine import Mode
+
+        md, workspace, window, layout, leaf, disp = _make_dispatcher("hello world\n")
+        press = MouseEvent(row=0, col=0, button=0, pressed=True)
+        drag = MouseEvent(row=0, col=5, button=0, pressed=True, dragging=True)
+        release = MouseEvent(row=0, col=5, button=0, pressed=False)
+        md.handle(press)
+        md.handle(drag)
+        md.handle(release)
+        assert disp.engine.mode == Mode.VISUAL_CHAR
+
+    def test_accidental_drag_with_no_movement_exits_visual_mode(self):
+        from peovim.modal.engine import Mode
+
+        md, workspace, window, layout, leaf, disp = _make_dispatcher("hello world\n")
+        # Click at col 2 (gutter=0, so cursor lands at col 2)
+        press = MouseEvent(row=0, col=2, button=0, pressed=True)
+        # Drag without leaving the same cell (same position)
+        drag = MouseEvent(row=0, col=2, button=0, pressed=True, dragging=True)
+        release = MouseEvent(row=0, col=2, button=0, pressed=False)
+        md.handle(press)
+        md.handle(drag)
+        md.handle(release)
+        # Should have exited visual mode since anchor == cursor
+        assert disp.engine.mode == Mode.NORMAL
