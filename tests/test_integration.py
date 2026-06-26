@@ -328,6 +328,30 @@ class TestYankPaste:
 
         assert s.text() == original
 
+    def test_char_p_cursor_lands_on_last_pasted_char(self):
+        # word2 yanked, cursor on 'w' of word1, p → word1word2 but cursor on '2'
+        s = EditorSession("word1")
+        s.registers.set('"', "word2", "char")
+        s.engine.set_cursor(0, 0)
+        s.window.cursor.move_to(0, 0)
+
+        s.type("p")
+
+        assert s.line(0) == "wword2ord1"
+        assert s.window.cursor.col == 5  # on '2', last char of 'word2'
+
+    def test_char_P_cursor_lands_on_last_pasted_char(self):
+        # word2 yanked, cursor on 'w' of word1, P → word2word1, cursor on '2'
+        s = EditorSession("word1")
+        s.registers.set('"', "word2", "char")
+        s.engine.set_cursor(0, 0)
+        s.window.cursor.move_to(0, 0)
+
+        s.type("P")
+
+        assert s.line(0) == "word2word1"
+        assert s.window.cursor.col == 4  # on '2', last char of 'word2'
+
 
 # ---------------------------------------------------------------------------
 # Mode transitions

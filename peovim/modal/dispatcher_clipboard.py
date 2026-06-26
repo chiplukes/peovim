@@ -96,6 +96,14 @@ def handle_yank_block(d: ActionDispatcher, action: YankBlock, doc: Document, cur
     d._maybe_sync_clipboard(text, "block")
 
 
+def _char_paste_end(start_line: int, start_col: int, text: str) -> tuple[int, int]:
+    """Return (line, col) of the last character of text pasted at (start_line, start_col)."""
+    if "\n" not in text:
+        return start_line, max(0, start_col + len(text) - 1)
+    parts = text.split("\n")
+    return start_line + len(parts) - 1, max(0, len(parts[-1]) - 1)
+
+
 def handle_paste_register(d: ActionDispatcher, action: PasteRegister, doc: Document, cur: Cursor) -> None:
     reg = action.register
     if reg == '"' and d._editor_state is not None:
@@ -125,11 +133,11 @@ def handle_paste_register(d: ActionDispatcher, action: PasteRegister, doc: Docum
         text = text * action.count
         if action.before:
             doc.insert(line, col, text)
-            cur.move_to(line, col)
+            cur.move_to(*_char_paste_end(line, col, text))
         else:
             insert_col = col + 1
             doc.insert(line, insert_col, text)
-            cur.move_to(line, insert_col + len(text) - 1)
+            cur.move_to(*_char_paste_end(line, insert_col, text))
     d._dot_repeat = action
     d._emit_later("buffer_changed", buf_id=d._buf_id)
 
