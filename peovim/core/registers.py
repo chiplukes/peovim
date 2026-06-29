@@ -159,8 +159,8 @@ class RegisterStore:  # cm:f3d2c6
 
         CF_UNICODETEXT = 13
 
-        u32 = ctypes.windll.user32
-        k32 = ctypes.windll.kernel32
+        u32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
 
         u32.OpenClipboard.restype = ctypes.wintypes.BOOL
         u32.OpenClipboard.argtypes = [ctypes.wintypes.HWND]
@@ -198,8 +198,8 @@ class RegisterStore:  # cm:f3d2c6
         CF_UNICODETEXT = 13
         GMEM_MOVEABLE = 0x0002
 
-        u32 = ctypes.windll.user32
-        k32 = ctypes.windll.kernel32
+        u32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
 
         k32.GlobalAlloc.restype = ctypes.c_void_p
         k32.GlobalAlloc.argtypes = [ctypes.wintypes.UINT, ctypes.c_size_t]
