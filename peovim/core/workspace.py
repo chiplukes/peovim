@@ -214,6 +214,7 @@ class TabPage:
         _build(self.root)
 
         # Determine which split type and which side to look for
+        split_cls: type[SplitNode]
         if direction == "h":
             split_cls, need_side, target_attr, pick = VSplitNode, "right", "left", -1
         elif direction == "l":
@@ -243,6 +244,7 @@ class TabPage:
         """Resize the active window only within its directly enclosing split."""
         if delta == 0:
             return False
+        split_cls: type[SplitNode]
         if direction == "h":
             split_cls = VSplitNode
             positive_side = "left"

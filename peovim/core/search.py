@@ -89,7 +89,7 @@ def search_next(
         # We cannot use endpos=from_offset+1 because endpos truncates the searchable
         # string — a match that starts at from_offset but extends past it would be missed.
         if wrapscan:
-            m = next(pattern.finditer(text), None)
+            m = next(pattern.finditer(text), None)  # type: ignore[arg-type]
             if m is not None and m.start() <= from_offset:
                 return to_line_col(m.start())
         return None

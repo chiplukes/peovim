@@ -384,7 +384,7 @@ def _build_preview_content(path: str, target_line: int, col: int, *, theme: Any 
 
     spans = _get_syntax_spans(path, all_lines, start, end - 1) if theme is not None else []
 
-    result = []
+    result: list = []
     for doc_line in range(start, end):
         raw_line = all_lines[doc_line]
         prefix = f"{doc_line + 1:4d} "

@@ -55,6 +55,7 @@ def open_path_in_window(
             if dispatcher._workspace is not None:
                 dispatcher._workspace.add_document(target_doc)
 
+    assert target_doc is not None
     dispatcher.window.document = target_doc
     dispatcher.window.scroll_line = 0
     dispatcher.window.scroll_col = 0
@@ -68,7 +69,7 @@ def open_path_in_window(
 
     from peovim.core.filetype import detect_filetype
 
-    filetype = detect_filetype(resolved)
+    filetype = detect_filetype(str(resolved))
     dispatcher._emit_later("buffer_opened", buf_id=id(target_doc), path=str(resolved), filetype=filetype)
     return target_doc
 

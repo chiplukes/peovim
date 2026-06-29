@@ -195,7 +195,7 @@ def _build_diagnostic_nodes(
         root = TreeNode(
             label=f"{Path(path).name} ({len(items)})",
             value=root_value,
-            children_fn=(lambda entries=children: entries),
+            children_fn=(lambda entries=children: entries),  # type: ignore[misc]
         )
         root._cached_children = children
         root.expanded = root_value in expanded_values or path == current_path or (index == 0 and len(grouped) == 1)

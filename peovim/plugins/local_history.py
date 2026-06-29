@@ -408,7 +408,7 @@ class _LocalHistoryPanel:
 
     def feed_key(self, key: str) -> bool:
         if key == "r" and self._current_path is not None:
-            node = self._tree.selected_node()
+            node = self._tree.selected_node
             if node is not None and isinstance(node.value, _HistoryItem) and _controller is not None:
                 _controller.restore_entry(node.value.entry.snapshot)
             return True

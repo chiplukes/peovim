@@ -43,9 +43,9 @@ def handle_navigation_action(dispatcher: ActionDispatcher, action: object, doc: 
 
     if isinstance(action, JumpToMark):
         if dispatcher.marks is not None:
-            pos = dispatcher.marks.get(action.name)
-            if pos is not None:
-                target_line, target_col = pos
+            mark_pos = dispatcher.marks.get(action.name)
+            if mark_pos is not None:
+                target_line, target_col = mark_pos
                 if action.line_only:
                     text = doc.get_line(target_line)
                     stripped = text.lstrip()
@@ -56,7 +56,7 @@ def handle_navigation_action(dispatcher: ActionDispatcher, action: object, doc: 
 
     if isinstance(action, JumpBack):
         if dispatcher.jumplist is not None:
-            pos = None
+            pos: tuple[str, int, int, int] | None = None
             for _ in range(action.count):
                 pos = dispatcher.jumplist.back()
                 if pos is None:
@@ -67,13 +67,13 @@ def handle_navigation_action(dispatcher: ActionDispatcher, action: object, doc: 
 
     if isinstance(action, JumpForward):
         if dispatcher.jumplist is not None:
-            pos = None
+            fwd_pos: tuple[str, int, int, int] | None = None
             for _ in range(action.count):
-                pos = dispatcher.jumplist.forward()
-                if pos is None:
+                fwd_pos = dispatcher.jumplist.forward()
+                if fwd_pos is None:
                     break
-            if pos is not None:
-                _move_to_jump_target(dispatcher, doc, cur, *pos)
+            if fwd_pos is not None:
+                _move_to_jump_target(dispatcher, doc, cur, *fwd_pos)
         return True
 
     return False

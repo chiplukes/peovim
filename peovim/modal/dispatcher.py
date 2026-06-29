@@ -96,6 +96,7 @@ from peovim.modal.dispatcher_workspace import handle_workspace_action
 from peovim.modal.engine import ModalEngine, Mode
 
 if TYPE_CHECKING:
+    from peovim.commands.registry import CommandRegistry
     from peovim.core.document import Document
     from peovim.core.editor_state import EditorState
     from peovim.core.jumplist import JumpList
@@ -163,7 +164,7 @@ class ActionDispatcher:  # cm:7a5d8b
         self._pending_events: list[tuple[str, dict]] = []
         self._plugin_callbacks: dict[int, Callable] = {}
         self._pending_callbacks: list[Callable] = []
-        self._command_registry = None  # initialized lazily by _run_ex_command or set externally
+        self._command_registry: CommandRegistry | None = None  # initialized lazily by _run_ex_command or set externally
         self._public_mutation_guard_stack: list[str] = []
         self._public_mutation_allowance_stack: list[str] = []
         self._current_plugin_callback: str | None = None

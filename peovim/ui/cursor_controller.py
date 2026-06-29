@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
-from peovim.ui.backend import HideCursor, MoveCursor, PutCell, SetCursorStyle, ShowCursor
+from peovim.ui.backend import HideCursor, MoveCursor, PutCell, RenderOp, SetCursorStyle, ShowCursor
 from peovim.ui.text_layout import logical_col_to_display_col
 from peovim.ui.window_renderer import _gutter_width
 
@@ -40,7 +40,7 @@ class TerminalCursorController:
         resolved.update(active_window.options)
         return resolved
 
-    def build_terminal_cursor_ops(self) -> list[object]:
+    def build_terminal_cursor_ops(self) -> list[RenderOp]:
         host = self._host
         state = self.resolve_terminal_cursor_state()
         if state is None:
@@ -50,12 +50,13 @@ class TerminalCursorController:
             return [HideCursor()]
 
         row, col, shape, blink = state
-        ops: list[object] = []
+        ops: list[RenderOp] = []
         if (shape, blink) != (host._terminal_cursor_shape, host._terminal_cursor_blink):
-            ops.append(SetCursorStyle(shape=shape, blink=blink))
+            ops.append(SetCursorStyle(shape=cast(Literal["block", "bar"], shape), blink=blink))
             host._terminal_cursor_shape = shape
             host._terminal_cursor_blink = blink
         ops.append(MoveCursor(row, col))
+        assert host._grid is not None
         cell = host._grid._current[row][col]
         ops.append(PutCell(cell[0], fg=cell[1], bg=cell[2], attrs=cell[3]))
         ops.append(MoveCursor(row, col))

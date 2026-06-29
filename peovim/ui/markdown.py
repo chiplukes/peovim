@@ -238,12 +238,12 @@ def _render_xml_node(node: ET.Element, indent: int = 0, theme: Theme | None = No
 
     if tag in {"returns", "exception"}:
         label = "Returns:" if tag == "returns" else "Exception:"
-        body = " ".join(
+        body_str = " ".join(
             _plain_text_from_rich_line(line).strip()
             for line in _collect_xml_text(node, 0, theme=theme)
             if _plain_text_from_rich_line(line).strip()
         )
-        return [f"{label} {body}".rstrip(), ""]
+        return [f"{label} {body_str}".rstrip(), ""]
 
     if tag == "paramref":
         name = node.attrib.get("name", "")

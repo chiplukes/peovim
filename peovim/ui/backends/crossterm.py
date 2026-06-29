@@ -91,9 +91,9 @@ def _coerce_input_event(payload: object) -> InputEvent:
         if not all(isinstance(value, int) for value in (row, col, button)) or not isinstance(pressed, bool):
             raise ValueError("crossterm mouse payload must provide row, col, button, and pressed values")
         return MouseEvent(
-            row=row,
-            col=col,
-            button=button,
+            row=int(row),  # type: ignore[call-overload]
+            col=int(col),  # type: ignore[call-overload]
+            button=int(button),  # type: ignore[call-overload]
             pressed=pressed,
             dragging=bool(_mapping_value(payload, "dragging", False)),
             shift=bool(_mapping_value(payload, "shift", False)),
@@ -129,12 +129,12 @@ def _encode_render_op(op: RenderOp) -> dict[str, object]:
 class CrosstermBackend:
     """Adapter that keeps the editor decoupled from the optional provider module."""
 
-    def __init__(self, provider: object | None = None) -> None:
+    def __init__(self, provider: Any | None = None) -> None:
         provider_module = None
         if provider is None:
             provider_module = _load_provider_module()
             provider = _create_provider(provider_module)
-        self._provider = provider
+        self._provider: Any = provider
         self._buf: list[dict[str, object]] = []
         self._capabilities = _normalise_capabilities(self._read_capabilities(provider_module))
 

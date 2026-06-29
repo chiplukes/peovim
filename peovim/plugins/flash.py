@@ -236,6 +236,7 @@ class FlashPlugin:  # cm:4d1b6e
         if modal.mode() in visual_modes:
             self._resume_visual_mode = modal.mode()
         else:
+            assert ctx is not None
             self._resume_visual_mode = next(mode for mode in visual_modes if mode.value == ctx.mode)
         self._resume_visual_anchor = modal.visual_anchor()
         self._resume_visual_cursor = active_win.cursor

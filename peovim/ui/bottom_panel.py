@@ -272,6 +272,7 @@ class LogOutputTab:
         self._visual: bool = False  # visual-line selection active
         self._visual_anchor: int = 0  # line where V was pressed
         self._handler: logging.Handler | None = None
+        self._root_handler: logging.Handler | None = None
         # Set by the editor layer (e.g. main.py) to write yanked text to registers.
         self.yank_fn: Any = None
 

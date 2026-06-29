@@ -12,7 +12,7 @@ PanelHost; this module adds vertical-orientation rendering and width management.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from peovim.core.style import Color, ColorLike, Style, normalize_color
 from peovim.ui.backend import ATTR_BOLD
@@ -148,15 +148,15 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         header_inactive_bg: ColorLike | None | object = _UNSET,
     ) -> SidebarStyle:
         if background is not _UNSET:
-            self._style.background = normalize_color(background)
+            self._style.background = normalize_color(cast(ColorLike, background))
         if header_active_fg is not _UNSET:
-            self._style.header_active_fg = normalize_color(header_active_fg)
+            self._style.header_active_fg = normalize_color(cast(ColorLike, header_active_fg))
         if header_active_bg is not _UNSET:
-            self._style.header_active_bg = normalize_color(header_active_bg)
+            self._style.header_active_bg = normalize_color(cast(ColorLike, header_active_bg))
         if header_inactive_fg is not _UNSET:
-            self._style.header_inactive_fg = normalize_color(header_inactive_fg)
+            self._style.header_inactive_fg = normalize_color(cast(ColorLike, header_inactive_fg))
         if header_inactive_bg is not _UNSET:
-            self._style.header_inactive_bg = normalize_color(header_inactive_bg)
+            self._style.header_inactive_bg = normalize_color(cast(ColorLike, header_inactive_bg))
         return self._style
 
     def click(self, row: int, col: int) -> bool:
@@ -283,7 +283,7 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         panel = self.active_panel
         if panel is None:
             return False
-        body_fg = theme.default_fg if theme is not None else default_fg
+        body_fg = cast(Color, theme.default_fg if theme is not None else default_fg)
         body_bg = self._resolve_sidebar_background(theme, default_bg)
         header_rows = self._header_row_count(grid.height)
         self._render_panel_headers(grid, theme=theme, default_fg=body_fg, default_bg=body_bg, active_only=False)
@@ -309,8 +309,8 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         if panel_height > 0:
             body = CellGrid(grid.width, panel_height)
             # Push focus state and blink phase into panel so tree-based panels can blink.
-            panel._sidebar_focused = self._focused
-            panel._sidebar_blink_on = self.blink_on if self._focused else True
+            setattr(panel, "_sidebar_focused", self._focused)
+            setattr(panel, "_sidebar_blink_on", self.blink_on if self._focused else True)
             panel.render(body)
             body.apply_default_style(fg=body_fg, bg=body_bg)
             grid.blit(body, 0, body_top)
@@ -377,8 +377,8 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         if theme is not None:
             sidebar_style = theme.resolve("sidebar")
             if sidebar_style.bg is not None:
-                return sidebar_style.bg
-            return theme.default_bg
+                return cast(Color, sidebar_style.bg)
+            return cast(Color, theme.default_bg)
         return default_bg
 
     def _resolve_header_style(
@@ -394,8 +394,8 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         theme_style = (
             theme.resolve("sidebar.header.active" if is_active else "sidebar.header.inactive") if theme else Style()
         )
-        fg = theme_style.fg if theme_style.fg is not None else fallback_fg if fallback_fg is not None else default_fg
-        bg = theme_style.bg if theme_style.bg is not None else fallback_bg if fallback_bg is not None else default_bg
+        fg = cast(Color, theme_style.fg if theme_style.fg is not None else fallback_fg if fallback_fg is not None else default_fg)
+        bg = cast(Color, theme_style.bg if theme_style.bg is not None else fallback_bg if fallback_bg is not None else default_bg)
         attrs = theme_style.attrs if theme_style.attrs else (ATTR_BOLD if is_active else 0)
         return fg, bg, attrs
 

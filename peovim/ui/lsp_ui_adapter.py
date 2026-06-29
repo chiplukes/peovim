@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from peovim.lsp.protocol import uri_to_path
 
@@ -65,7 +65,7 @@ class LspUiAdapter:
         host._float_manager.focus(handle)
         host._invalidate("full")
 
-    def yank_popup_text(self, lines: list[object]) -> None:
+    def yank_popup_text(self, lines: list[Any]) -> None:
         host = self._host
         text = "\n".join(
             line if isinstance(line, str) else "".join(part for part, _style in line) for line in lines
@@ -234,7 +234,7 @@ class LspUiAdapter:
         return document, True
 
     @staticmethod
-    def apply_text_edits(document: object, edits: list[dict]) -> None:
+    def apply_text_edits(document: Any, edits: list[dict]) -> None:
         ordered = sorted(
             [edit for edit in edits if isinstance(edit, dict)],
             key=lambda edit: (

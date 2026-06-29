@@ -358,7 +358,7 @@ def _make_nodes(
             label=_node_label(entry.name, str(entry_path), status_map),
             value=str(entry_path),
             fg=color_for_status_entry(status_entry, surface="explorer") if status_entry is not None else None,
-            children_fn=lambda p=entry_path, expanded=expanded_paths, statuses=status_map: _make_nodes(
+            children_fn=lambda p=entry_path, expanded=expanded_paths, statuses=status_map: _make_nodes(  # type: ignore[misc]
                 p, expanded_paths=expanded, status_map=statuses
             ),
         )

@@ -217,8 +217,8 @@ def render_window_jobs_parallel(
 
     with ThreadPoolExecutor(
         max_workers=parallel_render_pool_size(policy=policy), thread_name_prefix="peovim-render"
-    ) as executor:
-        return list(executor.map(render_window_job, jobs))
+    ) as _pool:
+        return list(_pool.map(render_window_job, jobs))
 
 
 def execute_render_strategy(

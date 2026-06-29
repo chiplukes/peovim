@@ -498,7 +498,7 @@ def _build_status_nodes(api: Any) -> tuple[str, list[TreeNode]]:
 def _section_node(label: str, children: list[TreeNode]) -> TreeNode:
     from peovim.ui.tree_view import TreeNode
 
-    node = TreeNode(label=label, children_fn=lambda items=children: items)
+    node = TreeNode(label=label, children_fn=lambda items=children: items)  # type: ignore[misc]
     node.expanded = True
     return node
 
@@ -598,7 +598,7 @@ def _status_nodes(root: Path, entries: list[Any]) -> list[TreeNode]:
 
     def _group(title: str, items: list[Any], prefix: str = "") -> TreeNode:
         children = [_entry_node(e, prefix) for e in items]
-        node = TreeNode(label=f"{title} ({len(items)})", children_fn=lambda c=children: c)
+        node = TreeNode(label=f"{title} ({len(items)})", children_fn=lambda c=children: c)  # type: ignore[misc]
         node.expanded = True
         return node
 

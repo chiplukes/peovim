@@ -212,6 +212,7 @@ def _grep_with_args(api: Any, query: str, *, label: str | None = None) -> None:
             items.append(_LocationItem(f"{display_path}:{line_num + 1}: {text}", path, line_num, 0))
         return items
 
+    source: Any
     if query:
         source = _source(query)
         if not source:

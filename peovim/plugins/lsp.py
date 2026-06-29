@@ -468,7 +468,7 @@ def setup(api) -> None:  # cm:5b3d7f
         elif len(items) > 1:
             event_loop = getattr(api, "_event_loop", None)
             popup = getattr(event_loop, "_completion_popup", None)
-            if popup is not None:
+            if popup is not None and event_loop is not None:
                 popup.open(
                     items,
                     line,

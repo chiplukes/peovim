@@ -25,7 +25,7 @@ try:
         """Prefer native rendering, but fall back to pure rendering for unsupported features."""
         snapshot = args[0] if args else kwargs.get("snapshot")
         if getattr(snapshot, "options", {}).get("scrollbar"):
-            return _pure_render_window(*args, grid=grid, **kwargs)
+            return _pure_render_window(*args, grid=grid, **kwargs)  # type: ignore[misc]
         return _native_render_window(*args, **kwargs)
 
 except ImportError:

@@ -340,7 +340,7 @@ def _make_profile_event_loop() -> tuple[EventLoop, HeadlessBackend, NotifyManage
         editor_state=editor_state,
         notify_manager=notify_manager,
     )
-    event_loop._syntax_engine.submit = lambda *args, **kwargs: None
+    event_loop._syntax_engine.submit = lambda *args, **kwargs: None  # type: ignore[method-assign]
     event_loop._running = True
     return event_loop, backend, notify_manager
 
@@ -647,7 +647,7 @@ def _profile_lsp_decorations_render(iterations: int) -> WorkloadResult:
 
 def _profile_syntax_python(iterations: int) -> WorkloadResult:
     snapshot = _make_snapshot(_python_text(260), suffix=".py", width=120, height=40)
-    total_ms, samples = _time_iterations(iterations, lambda: _parse_task(snapshot.buffer_snapshot))
+    total_ms, samples = _time_iterations(iterations, lambda: _parse_task(snapshot.buffer_snapshot))  # type: ignore[arg-type]
     last_spans = _parse_task(snapshot.buffer_snapshot)
     return WorkloadResult(
         name="syntax_python",

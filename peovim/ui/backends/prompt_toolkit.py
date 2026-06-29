@@ -273,7 +273,7 @@ class PromptToolkitBackend:
         sys.stdout.flush()
         if self._raw_mode_ctx is not None:
             with contextlib.suppress(Exception):
-                self._raw_mode_ctx.__exit__(None, None, None)  # type: ignore[union-attr]
+                self._raw_mode_ctx.__exit__(None, None, None)  # type: ignore[attr-defined]
             self._raw_mode_ctx = None
 
     def set_mouse_enabled(self, enabled: bool) -> None:

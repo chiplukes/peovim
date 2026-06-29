@@ -9,7 +9,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import pathlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from peovim.api._metadata import API_NAMESPACE_STATUS, VERSION, namespace_status, requires_version
 
@@ -351,7 +351,7 @@ class EditorAPI:  # cm:6d5a2c
         """
         from peovim.modal.actions import CycleWindow
 
-        self._dispatcher.dispatch([CycleWindow(direction)])
+        self._dispatcher.dispatch([CycleWindow(cast(Literal["next", "prev"], direction))])
 
     def focus_window(self, direction: str) -> None:
         """Move focus in a direction (h/j/k/l); wraps to next/prev window at edges.
@@ -361,13 +361,13 @@ class EditorAPI:  # cm:6d5a2c
         """
         from peovim.modal.actions import SmartFocusWindow
 
-        self._dispatcher.dispatch([SmartFocusWindow(direction)])
+        self._dispatcher.dispatch([SmartFocusWindow(cast(Literal["h", "j", "k", "l"], direction))])
 
     def resize_window(self, direction: str, delta: int = 1) -> None:
         """Resize the active split in the given axis."""
         from peovim.modal.actions import ResizeWindow
 
-        self._dispatcher.dispatch([ResizeWindow(direction, delta)])
+        self._dispatcher.dispatch([ResizeWindow(cast(Literal["h", "v"], direction), delta)])
 
     def toggle_window_expand(self, width_fraction: float = 0.75) -> None:
         """Toggle the active window between equal sizing and a wider width share."""
@@ -427,7 +427,7 @@ class EditorAPI:  # cm:6d5a2c
         doc.path = None
         doc.filetype = filetype
         if name:
-            doc.name = name
+            setattr(doc, "name", name)
         self._workspace.add_document(doc)
 
         win = self._workspace.active_window
@@ -456,7 +456,7 @@ class EditorAPI:  # cm:6d5a2c
 
     def set_register(self, name: str, text: str, kind: str = "char") -> None:
         """Write text into a register."""
-        self._dispatcher.registers.set(name, text, kind)
+        self._dispatcher.registers.set(name, text, cast(Literal["char", "line", "block"], kind))
 
     def get_register(self, name: str) -> tuple[str, str]:
         """Return the current contents of a register."""
@@ -473,7 +473,7 @@ class EditorAPI:  # cm:6d5a2c
         from peovim.modal.actions import SplitWindow
 
         buffer_path = str(pathlib.Path(path).resolve()) if path is not None else None
-        self._dispatcher.dispatch([SplitWindow(direction, buffer_path=buffer_path)])
+        self._dispatcher.dispatch([SplitWindow(cast(Literal["h", "v"], direction), buffer_path=buffer_path)])
 
     def close_window(self) -> None:
         """Close the active window."""

@@ -178,7 +178,7 @@ def _register_lsp_handlers(api: EditorAPI) -> None:
 
 def _takes_context(callback: object) -> bool:
     try:
-        signature = inspect.signature(callback)
+        signature = inspect.signature(callback)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return False
     positional_kinds = {

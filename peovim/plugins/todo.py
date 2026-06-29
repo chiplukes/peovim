@@ -136,7 +136,9 @@ def _on_debounced(api: Any, **kwargs: Any) -> None:
 
 
 def _run_debounced_scan(api: Any, buf: Any) -> None:
-    _debounce_timers.pop(getattr(buf, "buf_id", None), None)
+    buf_id_val = getattr(buf, "buf_id", None)
+    if buf_id_val is not None:
+        _debounce_timers.pop(buf_id_val, None)
     _scan_buffer(api, buf)
 
 

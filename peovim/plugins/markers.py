@@ -694,7 +694,7 @@ class _MarkersController:
             child_nodes = [self._marker_node(marker) for marker in markers]
             value = ("group", group)
             label = f"* {group} ({len(markers)})" if group == active else f"{group} ({len(markers)})"
-            node = TreeNode(label=label, value=value, children_fn=(lambda items=child_nodes: items))
+            node = TreeNode(label=label, value=value, children_fn=(lambda items=child_nodes: items))  # type: ignore[misc]
             node._cached_children = child_nodes
             node.expanded = group == active or value in expanded_values
             nodes.append(node)
@@ -744,7 +744,7 @@ class _MarkersController:
         node = TreeNode(
             label=label,
             value=("marker", str(path), line, col),
-            children_fn=(lambda items=context_nodes: items) if context_nodes else None,
+            children_fn=(lambda items=context_nodes: items) if context_nodes else None,  # type: ignore[misc]
         )
         if context_nodes:
             node._cached_children = context_nodes

@@ -11,6 +11,7 @@ All asyncio operations run on a shared background event loop thread.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import pathlib
 import shutil
@@ -96,7 +97,7 @@ class LspManager:  # cm:2b9e4c
         if self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
 
-    def _schedule(self, coro) -> asyncio.Future | None:
+    def _schedule(self, coro) -> concurrent.futures.Future | None:  # type: ignore[type-arg]
         if self._loop and self._loop.is_running():
             return asyncio.run_coroutine_threadsafe(coro, self._loop)
         return None
@@ -235,7 +236,7 @@ class LspManager:  # cm:2b9e4c
         if not keys:
             return
         path = doc.path
-        if path is None:
+        if path is None or self._loop is None:
             return
         for key in keys:
             server = self._servers.get(key)
@@ -299,7 +300,7 @@ class LspManager:  # cm:2b9e4c
         if not keys:
             return
         path = doc.path
-        if path is None:
+        if path is None or self._loop is None:
             return
         for key in keys:
             server = self._servers.get(key)
@@ -376,6 +377,7 @@ class LspManager:  # cm:2b9e4c
         init_options: dict = {}
         if extra_paths:
             init_options["environment"] = {"extra-paths": extra_paths}
+        assert self._loop is not None
         client = LspClient(cmd=cfg.cmd, root=root, loop=self._loop, result_queue=self._result_queue, env=env)
         features = LspFeatures(client, self._result_queue, filetype=ft, init_options=init_options)
         client._notification_handler = features.handle_notification

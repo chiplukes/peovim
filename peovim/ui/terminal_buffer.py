@@ -87,8 +87,8 @@ class TerminalBuffer:
             self._screen: pyte.Screen = pyte.Screen(cols, rows)
             self._stream: pyte.ByteStream = pyte.ByteStream(self._screen)
         else:
-            self._screen = None
-            self._stream = None
+            self._screen = None  # type: ignore[assignment]
+            self._stream = None  # type: ignore[assignment]
 
     # ------------------------------------------------------------------
     # Lifecycle

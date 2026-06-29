@@ -21,7 +21,7 @@ import logging
 import pathlib
 from typing import Any
 
-import msgpack
+import msgpack  # type: ignore[import-untyped]
 import platformdirs
 import portalocker
 

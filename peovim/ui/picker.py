@@ -264,7 +264,7 @@ class PickerWidget:  # cm:1f6e5b
                 try:
                     result = self._preview_fn(sel_item)
                     if isinstance(result, str):
-                        preview_lines = result.splitlines()
+                        preview_lines = result.splitlines()  # type: ignore[assignment]
                     elif isinstance(result, list):
                         preview_lines = list(result)
                 except Exception:
@@ -361,6 +361,7 @@ class PickerWidget:  # cm:1f6e5b
         if self._on_confirm is None:
             self.close()
             return
+        selected: Any
         if self._multi_select and self._selected_set:
             selected = [self._filtered[i] for i in sorted(self._selected_set) if i < len(self._filtered)]
         else:

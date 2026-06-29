@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from typing import Any
 
 from peovim.modal.actions import (
     CloseWindow,
@@ -20,7 +21,7 @@ from peovim.modal.actions import (
 )
 
 
-def _focus_cycle_group(tab: object) -> list:
+def _focus_cycle_group(tab: Any) -> list:
     """Return the stable leaf order for focus cycling within a tab."""
     return list(tab.all_windows())
 

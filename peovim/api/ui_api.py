@@ -68,7 +68,7 @@ class UIAPI:  # cm:3c9d4f
         if self._float_manager is None:
             return None
         return self._float_manager.open_float(
-            content,
+            content,  # type: ignore[arg-type]
             anchor=anchor,
             width=width,
             height=height,
@@ -269,7 +269,7 @@ class UIAPI:  # cm:3c9d4f
             panel = TreeSidebarPanel(tree, width=width)
         else:
             # Update existing tree with fresh nodes and title
-            tree = getattr(panel, "tree", None)
+            tree = getattr(panel, "tree", None)  # type: ignore[assignment]
             if tree is not None:
                 tree.set_nodes(nodes)
                 if title:

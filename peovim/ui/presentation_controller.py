@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from peovim.ui.cell_grid import CellGrid
 from peovim.ui.layout import Rect
@@ -100,7 +100,7 @@ class OverlayPresentationController:
                 return False
             return key in registry.find_keys_for_plug(plug_name, mode="normal")
 
-        def _activate_window(window: object) -> None:
+        def _activate_window(window: Any) -> None:
             self._host._workspace.active_tab.focus_window(window)
             self._host._dispatcher.window = window
 
@@ -200,7 +200,7 @@ class OverlayPresentationController:
                 except Exception as exc:
                     host._report_runtime_error("tree view render", exc)
 
-    def render_overlay_widgets(self, grid: CellGrid, tab: object, layout: dict) -> None:
+    def render_overlay_widgets(self, grid: CellGrid, tab: Any, layout: dict) -> None:
         host = self._host
         if host._float_manager is not None:
             try:
@@ -221,7 +221,7 @@ class OverlayPresentationController:
                 host._report_runtime_error("picker render", exc)
         self.render_completion_popup(grid, tab, layout)
 
-    def render_completion_popup(self, grid: CellGrid, tab: object, layout: dict) -> None:
+    def render_completion_popup(self, grid: CellGrid, tab: Any, layout: dict) -> None:
         host = self._host
         if host._completion_popup is None or not getattr(host._completion_popup, "is_open", False):
             return

@@ -46,8 +46,8 @@ def handle_enter_insert_mode(d: ActionDispatcher, action: EnterInsertMode, doc: 
         line_len = len(doc.get_line(cur.line))
         cur.move_to(cur.line, min(cur.col + 1, line_len))
     elif action.position == "line_start":
-        line = doc.get_line(cur.line)
-        indent = len(line) - len(line.lstrip())
+        line_text = doc.get_line(cur.line)
+        indent = len(line_text) - len(line_text.lstrip())
         cur.move_to(cur.line, indent)
     elif action.position == "line_end":
         cur.move_to(cur.line, len(doc.get_line(cur.line)))

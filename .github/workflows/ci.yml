@@ -49,3 +49,6 @@ jobs:
 
       - name: Ruff format check
         run: uv run ruff format --check peovim/
+
+      - name: Mypy
+        run: uv run mypy peovim/

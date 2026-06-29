@@ -499,7 +499,7 @@ def _build_tree_nodes(
         section_node = TreeNode(
             label=section_name,
             fg=(140, 180, 255),
-            children_fn=lambda ch=children: ch,
+            children_fn=lambda ch=children: ch,  # type: ignore[misc]
             expanded=True,
         )
         section_node._cached_children = children

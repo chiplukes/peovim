@@ -934,7 +934,7 @@ def _set_message(ctx: Any, msg: str) -> None:
         es.message = msg
 
 
-def _load_scratch_text(ctx: Any, text: str) -> None:
+def _load_scratch_text(ctx: Any, text: str) -> Any:
     """Replace the current window buffer with scratch text and reset cursor/scroll."""
     from peovim.core.document import Document
 
@@ -1272,6 +1272,7 @@ def _cmd_recoverfile(cmd: ParsedCommand, ctx: Any) -> None:
 
     # Determine target path
     path_arg = cmd.args.strip()
+    target: pathlib.Path | None
     if path_arg:
         target = pathlib.Path(path_arg).resolve()
     else:

@@ -1,17 +1,30 @@
 repos:
-# Run ruff via uv so the hook uses the exact version from the lockfile,
-# matching what GitHub CI runs with `uv run ruff check/format`.
-  - repo: local
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
     hooks:
-      - id: ruff
-        name: ruff (legacy alias)
+    -   id: check-yaml
+    -   id: end-of-file-fixer
+    -   id: trailing-whitespace
+
+# Run ruff and mypy via uv so hooks use the exact versions from the lockfile,
+# matching what GitHub CI runs.
+-   repo: local
+    hooks:
+    -   id: ruff-check
+        name: ruff check
         entry: uv run ruff check --fix
         language: system
         pass_filenames: false
         types: [python]
-      - id: ruff-format
+    -   id: ruff-format
         name: ruff format
         entry: uv run ruff format
+        language: system
+        pass_filenames: false
+        types: [python]
+    -   id: mypy
+        name: mypy
+        entry: uv run mypy peovim/
         language: system
         pass_filenames: false
         types: [python]

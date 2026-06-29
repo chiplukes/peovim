@@ -14,7 +14,7 @@ See notes/architecture.md §Hot Code Paths.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from peovim.ui.backend import ATTR_BOLD, Color
 from peovim.ui.cell_grid import CellGrid
@@ -102,12 +102,12 @@ def render_window(
 
     # Pre-build per-line lookups for sign, virtual text, and ghost text decorations.
     # Done once here to keep the per-line loop O(1) per line.
-    sign_by_line: dict[int, object] = {}
-    vtext_by_line: dict[int, list[object]] = {}
-    ghost_by_line: dict[int, object] = {}
-    highlight_by_line: dict[int, list[object]] = {}
-    overlay_by_line: dict[int, list[object]] = {}
-    vlines_by_anchor: dict[int, list[object]] = {}
+    sign_by_line: dict[int, Any] = {}
+    vtext_by_line: dict[int, list[Any]] = {}
+    ghost_by_line: dict[int, Any] = {}
+    highlight_by_line: dict[int, list[Any]] = {}
+    overlay_by_line: dict[int, list[Any]] = {}
+    vlines_by_anchor: dict[int, list[Any]] = {}
     if all_decs:
         from peovim.ui.decorations import GhostText as _GT  # noqa: PLC0415
         from peovim.ui.decorations import HighlightRegion as _HR  # noqa: PLC0415
@@ -119,7 +119,7 @@ def render_window(
         for _dec in all_decs:
             if isinstance(_dec, _Sign):
                 _existing = sign_by_line.get(_dec.line)
-                if _existing is None or _dec.priority >= _existing.priority:  # type: ignore[union-attr]
+                if _existing is None or _dec.priority >= _existing.priority:
                     sign_by_line[_dec.line] = _dec
             elif isinstance(_dec, _VT):
                 vtext_by_line.setdefault(_dec.line, []).append(_dec)
@@ -156,7 +156,7 @@ def render_window(
 
     # Decode only potentially visible lines for this render pass.
     visible_lines = _extract_visible_lines(snapshot, visible_start, visible_end)
-    syntax_style_cache: dict[str, object] = theme._style_cache if theme is not None else {}
+    syntax_style_cache: dict[str, Any] = theme._style_cache if theme is not None else {}
     syntax_by_line = _index_highlight_spans(highlight_spans or (), visible_start, visible_end)
 
     # Build fold-header lookup: doc_line -> end_line for all closed folds
@@ -169,10 +169,10 @@ def render_window(
     # Only visible when the viewport starts at line 0.
     if doc_line == 0 and vlines_by_anchor.get(-1):
         for _vl in vlines_by_anchor[-1]:
-            for _ in range(_vl.count):  # type: ignore[union-attr]
+            for _ in range(_vl.count):
                 if screen_row >= rect.height:
                     break
-                _vl_bg = _vl.style.bg if _vl.style.bg is not None else base_bg  # type: ignore[union-attr]
+                _vl_bg = _vl.style.bg if _vl.style.bg is not None else base_bg
                 _grid.fill(screen_row, 0, rect.width, bg=_vl_bg)
                 screen_row += 1
 
@@ -205,10 +205,10 @@ def render_window(
                         _grid.write(
                             screen_row,
                             0,
-                            _sign.char,  # type: ignore[union-attr]
+                            _sign.char,
                             fg=_sign.style.fg,
                             bg=_sign.style.bg,
-                        )  # type: ignore[union-attr]
+                        )
                 if _number_w > 0:
                     num_str = str(doc_line + 1).rjust(_number_w - 1) + " "
                     _grid.write_str(
@@ -230,10 +230,10 @@ def render_window(
                     _grid.write(
                         screen_row,
                         0,
-                        _sign.char,  # type: ignore[union-attr]
+                        _sign.char,
                         fg=_sign.style.fg,
                         bg=_sign.style.bg,
-                    )  # type: ignore[union-attr]
+                    )
             # Line number
             if _number_w > 0:
                 if relativenumber and doc_line != snapshot.cursor_line:
@@ -258,9 +258,9 @@ def render_window(
             _used = len(visible)
             _remaining = text_w - _used
             if _remaining > 2:  # need at least a separator + one char
-                _vt_str = " | ".join(vt.text.strip() for vt in _vtexts)  # type: ignore[union-attr]
+                _vt_str = " | ".join(vt.text.strip() for vt in _vtexts)
                 _display = (" " + _vt_str)[:_remaining]
-                _style = _vtexts[0].style  # type: ignore[union-attr]
+                _style = _vtexts[0].style
                 _grid.write_str(
                     screen_row,
                     gutter_w + _used,
@@ -272,9 +272,9 @@ def render_window(
         # --- Ghost text (faded inline suggestion) ---
         _ghost = ghost_by_line.get(doc_line)
         if _ghost is not None and text_w > 0:
-            _gcol = _logical_col_to_display_col(line_text, _ghost.col, tabstop) - scroll_display_col  # type: ignore[union-attr]
-            _gtext = _ghost.text  # type: ignore[union-attr]
-            _gstyle = _ghost.style  # type: ignore[union-attr]
+            _gcol = _logical_col_to_display_col(line_text, _ghost.col, tabstop) - scroll_display_col
+            _gtext = _ghost.text
+            _gstyle = _ghost.style
             if _gcol < text_w and _gtext:
                 # Truncate to available width
                 _avail = text_w - _gcol
@@ -347,11 +347,11 @@ def render_window(
                     _grid.write(
                         screen_row,
                         gutter_w + sc,
-                        dec.display_char,  # type: ignore[union-attr]
-                        fg=dec.style.fg if dec.style.fg is not None else existing[1],  # type: ignore[union-attr]
-                        bg=dec.style.bg if dec.style.bg is not None else existing[2],  # type: ignore[union-attr]
+                        dec.display_char,
+                        fg=dec.style.fg if dec.style.fg is not None else existing[1],
+                        bg=dec.style.bg if dec.style.bg is not None else existing[2],
                         attrs=dec.style.attrs,
-                    )  # type: ignore[union-attr]
+                    )
 
         # --- Cursor ---
         if text_w > 0 and snapshot.options.get("_paint_cursor", True) and doc_line == snapshot.cursor_line:
@@ -368,17 +368,17 @@ def render_window(
 
         # --- Virtual lines anchored after this buffer line ---
         for _vl in vlines_by_anchor.get(doc_line, ()):
-            for _ in range(_vl.count):  # type: ignore[union-attr]
+            for _ in range(_vl.count):
                 if screen_row >= rect.height:
                     break
-                _vl_bg = _vl.style.bg if _vl.style.bg is not None else base_bg  # type: ignore[union-attr]
+                _vl_bg = _vl.style.bg if _vl.style.bg is not None else base_bg
                 _grid.fill(screen_row, 0, rect.width, bg=_vl_bg)
                 screen_row += 1
 
         doc_line += 1
 
     if scrollbar_w:
-        _render_scrollbar(_grid, line_count, rect.height, snapshot.scroll_line, is_active, base_bg)
+        _render_scrollbar(_grid, line_count, rect.height, snapshot.scroll_line, is_active, base_bg)  # type: ignore[arg-type]
 
     return _grid
 
@@ -498,7 +498,7 @@ def _apply_syntax_spans(
     text_w: int,
     tabstop: int,
     theme: Theme,
-    style_cache: dict[str, object],
+    style_cache: dict[str, Any],
 ) -> None:
     """Apply syntax highlight spans for a single doc_line to the cell grid."""
     for span in spans:
@@ -521,7 +521,6 @@ def _apply_syntax_spans(
         if style is None:
             style = theme.resolve(span.group)
             style_cache[span.group] = style
-        style = style  # type: ignore[assignment]
         if style.fg is None and style.bg is None and style.attrs == 0:
             continue  # nothing to paint
         paint_start = gutter_w + sc_start

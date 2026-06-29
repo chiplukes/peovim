@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary
 
 from peovim.syntax.engine import HighlightSpan
@@ -32,7 +32,7 @@ class WindowRenderController:  # cm:9d6c3f
         self._host = host
         self._window_grids: WeakKeyDictionary = WeakKeyDictionary()
 
-    def render_window_content(self, grid: CellGrid, tab: object, layout: dict, theme: object) -> None:
+    def render_window_content(self, grid: CellGrid, tab: Any, layout: dict, theme: Any) -> None:
         host = self._host
         loop = self.get_syntax_callback_loop()
         policy = self.resolve_render_execution_policy()
@@ -66,9 +66,9 @@ class WindowRenderController:  # cm:9d6c3f
 
     def collect_window_render_jobs(
         self,
-        tab: object,
+        tab: Any,
         layout: dict,
-        theme: object,
+        theme: Any,
         loop: asyncio.AbstractEventLoop | None,
     ) -> list[WindowRenderJob]:
         global_opts = self._global_options_snapshot()
@@ -79,10 +79,10 @@ class WindowRenderController:  # cm:9d6c3f
 
     def build_window_render_job(
         self,
-        tab: object,
-        leaf: object,
+        tab: Any,
+        leaf: Any,
         rect: Rect,
-        theme: object,
+        theme: Any,
         loop: asyncio.AbstractEventLoop | None,
         *,
         global_opts: dict | None = None,
@@ -110,7 +110,7 @@ class WindowRenderController:  # cm:9d6c3f
             sign_registry=host._editor_state.sign_registry if host._editor_state else None,
         )
 
-    def sync_window_render_state(self, window: object, rect: Rect, *, global_opts: dict | None = None) -> None:
+    def sync_window_render_state(self, window: Any, rect: Rect, *, global_opts: dict | None = None) -> None:
         window.width = rect.width
         window.height = rect.height
         max_scroll = max(0, window.document.line_count() - rect.height)
@@ -118,14 +118,14 @@ class WindowRenderController:  # cm:9d6c3f
         if getattr(window, "follow_cursor", True):
             window.scroll_to_cursor(text_width=self._text_width_for_window(window, rect.width, global_opts=global_opts))
 
-    def snapshot_window_for_render(self, window: object, *, global_opts: dict | None = None) -> WindowSnapshot:
+    def snapshot_window_for_render(self, window: Any, *, global_opts: dict | None = None) -> WindowSnapshot:
         return window.snapshot(global_options=global_opts)
 
     def _global_options_snapshot(self) -> dict | None:
         host = self._host
         return host._editor_state.options.global_as_dict() if host._editor_state is not None else None
 
-    def _text_width_for_window(self, window: object, rect_width: int, *, global_opts: dict | None = None) -> int:
+    def _text_width_for_window(self, window: Any, rect_width: int, *, global_opts: dict | None = None) -> int:
         """Return the visible text columns for a window (rect_width minus gutter)."""
         if global_opts is None:
             host = self._host
@@ -149,7 +149,7 @@ class WindowRenderController:  # cm:9d6c3f
     def submit_window_syntax(
         self,
         snapshot: WindowSnapshot,
-        window: object,
+        window: Any,
         loop: asyncio.AbstractEventLoop | None,
     ) -> None:
         host = self._host
@@ -167,7 +167,7 @@ class WindowRenderController:  # cm:9d6c3f
 
     def resolve_window_highlight_spans(
         self,
-        document: object,
+        document: Any,
         visible_start: int,
         visible_end: int,
     ) -> tuple[HighlightSpan, ...]:
@@ -192,10 +192,10 @@ class WindowRenderController:  # cm:9d6c3f
 
     def build_window_render_decorations(
         self,
-        window: object,
+        window: Any,
         snapshot: WindowSnapshot,
         is_active: bool,
-    ) -> tuple[object, ...]:
+    ) -> tuple[Any, ...]:
         decorations = list(self._build_search_decorations(snapshot))
         decorations.extend(self.get_window_extra_decorations(window))
         if is_active:
@@ -305,7 +305,7 @@ class WindowRenderController:  # cm:9d6c3f
                 decorations.append(HighlightRegion(doc_line, col_start, doc_line, col_end, search_style))
         return decorations
 
-    def get_window_extra_decorations(self, window: object) -> list[object]:
+    def get_window_extra_decorations(self, window: Any) -> list[Any]:
         host = self._host
         if host._editor_state is None:
             return []

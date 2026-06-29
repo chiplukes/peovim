@@ -9,7 +9,7 @@ Replaceable via ui.set_message_handler() (noice pattern).
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from peovim.ui.backend import ATTR_BOLD, Color
 from peovim.ui.cell_grid import CellGrid
@@ -61,8 +61,8 @@ def render_status_bar(
     mode: Mode,
     rect: Rect,
     grid: CellGrid,
-    workspace: object | None = None,
-    editor_state: object | None = None,
+    workspace: Any | None = None,
+    editor_state: Any | None = None,
 ) -> None:
     """
     Write status bar content into `grid` at rect.y. rect.height must be 1.

@@ -127,6 +127,8 @@ class PluginManager:  # cm:a5c8f4
         """Subscribe to a named event; load on first fire (once)."""
         module_path = pending.module_path
         event_name = pending.on_event
+        if event_name is None:
+            return
 
         def _handler(**kwargs: Any) -> None:
             if pending._loaded:

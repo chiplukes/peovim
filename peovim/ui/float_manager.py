@@ -8,7 +8,7 @@ Manages z-ordering and the FloatHandle API (close, set_content).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from peovim.ui.cell_grid import CellGrid
 from peovim.ui.text_layout import expand_for_display
@@ -126,7 +126,7 @@ class FloatManager:  # cm:8a7c9d
         on_key: Any = None,
     ) -> FloatHandle:
         if isinstance(content, str):
-            content = content.splitlines()
+            content = cast(list[FloatLine], content.splitlines())
         flt = Float(
             content=list(content),
             width=width,

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import peovim.ui.runtime_controller as _runtime_controller
 from peovim.syntax.engine import HighlightSpan, SyntaxEngine
-from peovim.ui.backend import KeyEvent
+from peovim.ui.backend import KeyEvent, RenderOp
 from peovim.ui.cell_grid import CellGrid
 from peovim.ui.cmdline_controller import CommandLineController
 from peovim.ui.command_line import CommandLine
@@ -77,14 +77,14 @@ class EventLoop:  # cm:e4d6b5
         workspace: Workspace,
         command_line: CommandLine | None = None,
         editor_state: EditorState | None = None,
-        float_manager: object | None = None,
-        notify_manager: object | None = None,
-        picker: object | None = None,
-        which_key_panel: object | None = None,
-        lsp_queue: object | None = None,
-        completion_popup: object | None = None,
-        recovery_store: object | None = None,
-        options: object | None = None,
+        float_manager: Any | None = None,
+        notify_manager: Any | None = None,
+        picker: Any | None = None,
+        which_key_panel: Any | None = None,
+        lsp_queue: Any | None = None,
+        completion_popup: Any | None = None,
+        recovery_store: Any | None = None,
+        options: Any | None = None,
     ) -> None:
         self._backend = backend
         self._engine = engine
@@ -103,7 +103,7 @@ class EventLoop:  # cm:e4d6b5
         # Mirror recovery_store onto editor_state so commands can reach it
         if recovery_store is not None and editor_state is not None:
             editor_state.recovery_store = recovery_store
-        self._signature_help_handle: object | None = None
+        self._signature_help_handle: Any | None = None
         # Track last key_buffer length to detect prefix changes
         self._last_key_buf_len: int = 0
         self._grid: CellGrid | None = None
@@ -129,12 +129,13 @@ class EventLoop:  # cm:e4d6b5
         )
         # Tree views list (shared reference to UIAPI._tree_views when available)
         self._tree_views: list = []
-        self._sidebar: object | None = None
-        self._bottom_panel: object | None = None
-        self._binding_registry: object | None = None  # wired in main.py after EditorAPI init
+        self._sidebar: Any | None = None
+        self._bottom_panel: Any | None = None
+        self._binding_registry: Any | None = None  # wired in main.py after EditorAPI init
         self._current_sidebar_rect: Rect | None = None
         self._current_bottom_panel_rect: Rect | None = None
-        self._flash: object | None = None
+        self._flash: Any | None = None
+        self._pending_rename: Any = None
         self._cmdline_controller = CommandLineController(self)
         self._cursor_controller = TerminalCursorController(self)
         self._frame_controller = FrameController(self)
@@ -170,14 +171,12 @@ class EventLoop:  # cm:e4d6b5
         # PieceTable.load() resets version to 0, so old cache entries at v0
         # would suppress re-parsing of new content with the same version.
         if editor_state is not None:
-            editor_state.event_bus.on(
-                "buffer_opened",
-                lambda buf_id=0, **_kw: (
-                    self._syntax_cache.pop(buf_id, None),
-                    self._syntax_submitted.pop(buf_id, None),
-                    self._syntax_engine.remove_buffer(buf_id),
-                ),
-            )
+            def _on_buffer_opened(buf_id: int = 0, **_kw: object) -> None:
+                self._syntax_cache.pop(buf_id, None)
+                self._syntax_submitted.pop(buf_id, None)
+                self._syntax_engine.remove_buffer(buf_id)
+
+            editor_state.event_bus.on("buffer_opened", _on_buffer_opened)
             editor_state.event_bus.on("yank_done", self._on_yank_done)
             editor_state.event_bus.on("option_changed", self._on_option_changed)
             editor_state.event_bus.on("cursor_moved", self._on_cursor_moved_completion)
@@ -393,7 +392,7 @@ class EventLoop:  # cm:e4d6b5
     def _resolve_active_window_cursor_options(self) -> dict:
         return self._cursor_controller.resolve_active_window_cursor_options()
 
-    def _build_terminal_cursor_ops(self) -> list[object]:
+    def _build_terminal_cursor_ops(self) -> list[RenderOp]:
         return self._cursor_controller.build_terminal_cursor_ops()
 
     def _resolve_terminal_cursor_state(self) -> tuple[int, int, str, bool] | None:

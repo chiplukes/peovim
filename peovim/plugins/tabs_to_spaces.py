@@ -68,7 +68,7 @@ def _normalize_buffer(api: Any, buf: Any) -> bool:
     last_line_len = len(buf.get_line(last_line_index)) if line_count > 0 else 0
     buf.replace(0, 0, last_line_index, last_line_len, normalized)
 
-    if next_cursor is not None:
+    if next_cursor is not None and active_win is not None:
         active_win.set_cursor(*next_cursor)
     return True
 

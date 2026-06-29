@@ -144,7 +144,7 @@ def check_optional_deps(api: Any, plugin_manager: Any, config_loader: Any) -> li
 
     # pygit2 — faster git queries
     try:
-        import pygit2
+        import pygit2  # type: ignore[import-not-found]
 
         items.append(HealthItem("ok", f"pygit2 {getattr(pygit2, '__version__', '?')} — fast git backend available"))
     except ImportError:
@@ -154,7 +154,7 @@ def check_optional_deps(api: Any, plugin_manager: Any, config_loader: Any) -> li
 
     # jedi — offline Python completion
     try:
-        import jedi
+        import jedi  # type: ignore[import-not-found]
 
         items.append(
             HealthItem("ok", f"jedi {getattr(jedi, '__version__', '?')} — offline Python completion available")

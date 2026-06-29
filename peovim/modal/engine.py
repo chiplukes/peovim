@@ -19,7 +19,7 @@ from __future__ import annotations
 import enum
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 if TYPE_CHECKING:
     from peovim.core.document import Document
@@ -534,11 +534,11 @@ class ModalEngine:  # cm:5c8e7a
                 return []
 
             # Check user trie for bindings starting with op+key (e.g. ds(, cs[, ysiw()
-            u_node = self._user_tries[Mode.NORMAL]
+            u_node: TrieNode | None = self._user_tries[Mode.NORMAL]
             for k in (op, key):
-                u_node = u_node.children.get(k)
                 if u_node is None:
                     break
+                u_node = u_node.children.get(k)
             if u_node is not None:
                 if u_node.action_fn is not None:
                     # Complete 2-char user binding
@@ -653,7 +653,7 @@ class ModalEngine:  # cm:5c8e7a
                 motion_end_inclusive=motion_end_inclusive,
             )]
         if op == "y":
-            return [YankRange(start[0], start[1], end[0], end[1], register=reg, yank_type=range_type)]
+            return [YankRange(start[0], start[1], end[0], end[1], register=reg, yank_type=cast(Literal["char", "line", "block"], range_type))]
         if op == "c":
             return [
                 CompoundAction(
@@ -717,11 +717,11 @@ class ModalEngine:  # cm:5c8e7a
         key_str = "".join(seq)
 
         # Check user trie first for the complete sequence
-        node = self._user_tries[Mode.NORMAL]
+        node: TrieNode | None = self._user_tries[Mode.NORMAL]
         for k in seq:
-            node = node.children.get(k)
             if node is None:
                 break
+            node = node.children.get(k)
         if node is not None and node.action_fn is not None:
             actions = node.action_fn(state)
             return actions
@@ -865,7 +865,7 @@ class ModalEngine:  # cm:5c8e7a
                 }.get(mode)
                 if mode_name is None:
                     return []
-                return [MoveCursor(anchor[0], anchor[1]), EnterVisualMode(mode_name), MoveCursor(cursor[0], cursor[1])]
+                return [MoveCursor(anchor[0], anchor[1]), EnterVisualMode(cast(Literal["char", "line", "block"], mode_name)), MoveCursor(cursor[0], cursor[1])]
             if ch == "*":
                 return [SearchWordUnderCursor(whole_word=False, reverse=False)]
             if ch == "#":
@@ -900,9 +900,9 @@ class ModalEngine:  # cm:5c8e7a
                             word = wm.group()
                             break
                     if word is None:
-                        wm = _re.search(r"\w+", text[col:])
-                        if wm:
-                            word = wm.group()
+                        wm2 = _re.search(r"\w+", text[col:])
+                        if wm2:
+                            word = wm2.group()
                     if word:
                         try:
                             from peovim.core.search import compile_pattern
@@ -1021,12 +1021,14 @@ class ModalEngine:  # cm:5c8e7a
         if len(seq) == 1 and first == "<C-w>":
             return True
         # Check user trie: seq is a valid prefix if there's a node with children
-        node = self._user_tries[Mode.NORMAL]
+        trie_node: TrieNode | None = self._user_tries[Mode.NORMAL]
         for k in seq:
-            node = node.children.get(k)
-            if node is None:
+            if trie_node is None:
                 return False
-        return bool(node.children)
+            trie_node = trie_node.children.get(k)
+        if trie_node is None:
+            return False
+        return bool(trie_node.children)
 
     def _lookup_key(self, key: str, mode: Mode) -> TrieNode | None:
         user_node = self._user_tries[mode].children.get(key)
@@ -1181,18 +1183,18 @@ class ModalEngine:  # cm:5c8e7a
             seq = list(state.key_buffer)
 
             # Check user visual bindings for multi-key sequences first
-            node = self._user_tries[Mode.VISUAL_CHAR]
+            seq_node: TrieNode | None = self._user_tries[Mode.VISUAL_CHAR]
             for k in seq:
-                node = node.children.get(k)  # type: ignore[assignment]
-                if node is None:
+                if seq_node is None:
                     break
-            if node is not None and node.action_fn is not None:
+                seq_node = seq_node.children.get(k)
+            if seq_node is not None and seq_node.action_fn is not None:
                 state.key_buffer.clear()
-                actions = node.action_fn(state)
+                actions = seq_node.action_fn(state)
                 state.reset()
                 self._remember_visual_selection((line, col))
                 return actions + [EnterNormalMode()]
-            if node is not None and node.children:
+            if seq_node is not None and seq_node.children:
                 return []
 
             if seq == ["g", "g"]:
@@ -1221,11 +1223,11 @@ class ModalEngine:  # cm:5c8e7a
                     bounds = self.visual_block_bounds((line, col))
                     if bounds is None:
                         return [EnterNormalMode()]
-                    return [ChangeCaseBlock(*bounds, mode), EnterNormalMode()]
+                    return [ChangeCaseBlock(*bounds, cast(Literal["upper", "lower", "toggle"], mode)), EnterNormalMode()]
                 bounds = self.visual_char_bounds((line, col))
                 if bounds is None:
                     return [EnterNormalMode()]
-                return [ChangeCase(*bounds, mode), EnterNormalMode()]
+                return [ChangeCase(*bounds, cast(Literal["upper", "lower", "toggle"], mode)), EnterNormalMode()]
             # Text object: i{char} or a{char}
             if len(seq) == 2 and seq[0] in ("i", "a"):
                 obj_mode = "inner" if seq[0] == "i" else "outer"
@@ -1251,7 +1253,7 @@ class ModalEngine:  # cm:5c8e7a
         state.count_a = 0  # consume count
 
         # --- User visual bindings (single-key) ---
-        node = self._user_tries[Mode.VISUAL_CHAR].children.get(key)
+        node: TrieNode | None = self._user_tries[Mode.VISUAL_CHAR].children.get(key)
         if node is not None:
             if node.action_fn is None or node.children:
                 # Prefix of a longer sequence — buffer it before built-ins like visual r{char}.
@@ -1592,7 +1594,7 @@ class ModalEngine:  # cm:5c8e7a
         root = self._user_tries[mode]
         tokens = _parse_key_sequence(keys)
         # Walk trie collecting (parent, key) pairs so we can prune
-        path: list[tuple[object, str]] = []
+        path: list[tuple[TrieNode, str]] = []
         node = root
         for token in tokens:
             child = node.children.get(token)
@@ -1604,9 +1606,9 @@ class ModalEngine:  # cm:5c8e7a
         node.action_fn = None
         # Prune empty nodes bottom-up
         for parent, token in reversed(path):
-            child = parent.children.get(token)  # type: ignore[union-attr]
+            child = parent.children.get(token)
             if child is not None and not child.children and child.action_fn is None:
-                del parent.children[token]  # type: ignore[union-attr]
+                del parent.children[token]
             else:
                 break
 

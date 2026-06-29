@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from peovim.ui.cell_grid import CellGrid
 from peovim.ui.layout import Rect, compute_layout
@@ -42,7 +42,7 @@ class FrameController:
         host._render_overlay_widgets(grid, tab, layout)
 
     def compute_frame_layout(
-        self, tab: object, cols: int, rows: int
+        self, tab: Any, cols: int, rows: int
     ) -> tuple[dict, list[Rect], int, Rect | None, Rect | None]:
         host = self._host
 

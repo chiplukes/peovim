@@ -192,7 +192,7 @@ def _build_outline_nodes(symbols: list[dict], *, expanded_values: set[tuple] | N
             label=str(symbol.get("name", "")),
             icon=_symbol_icon(str(symbol.get("kind", ""))),
             value=value,
-            children_fn=(lambda items=children: items) if children else None,
+            children_fn=(lambda items=children: items) if children else None,  # type: ignore[misc]
         )
         if children:
             node._cached_children = children
