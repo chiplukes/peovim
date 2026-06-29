@@ -643,17 +643,32 @@ class ModalEngine:  # cm:5c8e7a
                 end = (end[0], min(end[1] + 1, len(line_text)))
 
         if op == "d":
-            return [DeleteRange(
-                start[0], start[1], end[0], end[1],
-                register=reg, save_deleted=True,
-                motion_fn=motion_fn,
-                motion_count=motion_count,
-                motion_range_type=range_type,
-                motion_end_exclusive=motion_end_exclusive,
-                motion_end_inclusive=motion_end_inclusive,
-            )]
+            return [
+                DeleteRange(
+                    start[0],
+                    start[1],
+                    end[0],
+                    end[1],
+                    register=reg,
+                    save_deleted=True,
+                    motion_fn=motion_fn,
+                    motion_count=motion_count,
+                    motion_range_type=range_type,
+                    motion_end_exclusive=motion_end_exclusive,
+                    motion_end_inclusive=motion_end_inclusive,
+                )
+            ]
         if op == "y":
-            return [YankRange(start[0], start[1], end[0], end[1], register=reg, yank_type=cast(Literal["char", "line", "block"], range_type))]
+            return [
+                YankRange(
+                    start[0],
+                    start[1],
+                    end[0],
+                    end[1],
+                    register=reg,
+                    yank_type=cast(Literal["char", "line", "block"], range_type),
+                )
+            ]
         if op == "c":
             return [
                 CompoundAction(
@@ -865,7 +880,11 @@ class ModalEngine:  # cm:5c8e7a
                 }.get(mode)
                 if mode_name is None:
                     return []
-                return [MoveCursor(anchor[0], anchor[1]), EnterVisualMode(cast(Literal["char", "line", "block"], mode_name)), MoveCursor(cursor[0], cursor[1])]
+                return [
+                    MoveCursor(anchor[0], anchor[1]),
+                    EnterVisualMode(cast(Literal["char", "line", "block"], mode_name)),
+                    MoveCursor(cursor[0], cursor[1]),
+                ]
             if ch == "*":
                 return [SearchWordUnderCursor(whole_word=False, reverse=False)]
             if ch == "#":
@@ -1223,7 +1242,10 @@ class ModalEngine:  # cm:5c8e7a
                     bounds = self.visual_block_bounds((line, col))
                     if bounds is None:
                         return [EnterNormalMode()]
-                    return [ChangeCaseBlock(*bounds, cast(Literal["upper", "lower", "toggle"], mode)), EnterNormalMode()]
+                    return [
+                        ChangeCaseBlock(*bounds, cast(Literal["upper", "lower", "toggle"], mode)),
+                        EnterNormalMode(),
+                    ]
                 bounds = self.visual_char_bounds((line, col))
                 if bounds is None:
                     return [EnterNormalMode()]

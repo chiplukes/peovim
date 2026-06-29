@@ -5,7 +5,7 @@
 
 A fast, modern, cross-platform modal text editor written in Python — heavily inspired by Neovim with a clean plugin API designed for extensibility.
 
-I've been a Vim/Neovim editor Nerd for a long time and this project grew out of the question: 
+I've been a Vim/Neovim editor Nerd for a long time and this project grew out of the question:
 
 * "Can a basic Vim/Neovim style modal editor be created entirely with Python?"
 
@@ -54,6 +54,7 @@ Being written entirely in Python this editor is very easy to modify or create pl
 git clone https://github.com/chiplukes/peovim
 cd peovim
 uv sync
+uvx pre-commit install   # activates lint/format hooks on every commit
 ```
 
 ### As a global tool

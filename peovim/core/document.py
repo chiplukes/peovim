@@ -84,6 +84,7 @@ class Document:  # cm:d5f3b8
 
     def __init__(self, path: Path | None = None) -> None:
         self.path: Path | None = path
+        self.name: str | None = None  # display name for scratch buffers (no path)
         self.encoding: str = "utf-8"
         self.line_ending: str = "\n"
         self.had_mixed_line_endings: bool = False

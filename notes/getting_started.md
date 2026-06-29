@@ -40,6 +40,7 @@ uv tool install --reinstall .
 git clone <repo-url>
 cd peovim
 uv sync --extra dev
+uvx pre-commit install   # activates lint/format hooks on every commit
 ```
 
 ## Running the editor (development)

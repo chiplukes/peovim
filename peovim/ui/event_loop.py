@@ -171,6 +171,7 @@ class EventLoop:  # cm:e4d6b5
         # PieceTable.load() resets version to 0, so old cache entries at v0
         # would suppress re-parsing of new content with the same version.
         if editor_state is not None:
+
             def _on_buffer_opened(buf_id: int = 0, **_kw: object) -> None:
                 self._syntax_cache.pop(buf_id, None)
                 self._syntax_submitted.pop(buf_id, None)

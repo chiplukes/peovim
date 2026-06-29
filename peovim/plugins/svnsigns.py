@@ -537,9 +537,11 @@ def _on_buf_changed(api: Any, **kwargs: Any) -> None:
         return
     try:
         loop = asyncio.get_event_loop()
+
         def _debounced_callback() -> None:
-                _update_signs(api, target_buf)
-                _refresh_panel_if_visible(api)
+            _update_signs(api, target_buf)
+            _refresh_panel_if_visible(api)
+
         handle = loop.call_later(0.6, _debounced_callback)
         _debounce_timers[buf_id] = handle
     except RuntimeError:

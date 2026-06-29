@@ -101,7 +101,7 @@ def render_status_bar(
         with contextlib.suppress(Exception):
             filepath_mode = str(editor_state.options.get("statusline_filepath", "filename"))
     if doc.path is None:
-        fname = "[No Name]"
+        fname = doc.name or "[No Name]"
     elif filepath_mode == "full":
         fname = str(doc.path)
     elif filepath_mode == "relative":

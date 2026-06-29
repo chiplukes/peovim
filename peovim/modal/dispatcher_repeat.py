@@ -66,7 +66,10 @@ def _rebase_repeat_action(dispatcher, action: object) -> object:
                     line_text = document.get_line(end[0])
                     end = (end[0], min(end[1] + 1, len(line_text)))
             return DeleteRange(
-                start[0], start[1], end[0], end[1],
+                start[0],
+                start[1],
+                end[0],
+                end[1],
                 register=action.register,
                 save_deleted=action.save_deleted,
                 motion_fn=action.motion_fn,

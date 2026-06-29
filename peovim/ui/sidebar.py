@@ -309,8 +309,8 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         if panel_height > 0:
             body = CellGrid(grid.width, panel_height)
             # Push focus state and blink phase into panel so tree-based panels can blink.
-            setattr(panel, "_sidebar_focused", self._focused)
-            setattr(panel, "_sidebar_blink_on", self.blink_on if self._focused else True)
+            panel._sidebar_focused = self._focused  # type: ignore[attr-defined]
+            panel._sidebar_blink_on = self.blink_on if self._focused else True  # type: ignore[attr-defined]
             panel.render(body)
             body.apply_default_style(fg=body_fg, bg=body_bg)
             grid.blit(body, 0, body_top)
@@ -394,8 +394,14 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         theme_style = (
             theme.resolve("sidebar.header.active" if is_active else "sidebar.header.inactive") if theme else Style()
         )
-        fg = cast(Color, theme_style.fg if theme_style.fg is not None else fallback_fg if fallback_fg is not None else default_fg)
-        bg = cast(Color, theme_style.bg if theme_style.bg is not None else fallback_bg if fallback_bg is not None else default_bg)
+        fg = cast(
+            Color,
+            theme_style.fg if theme_style.fg is not None else fallback_fg if fallback_fg is not None else default_fg,
+        )
+        bg = cast(
+            Color,
+            theme_style.bg if theme_style.bg is not None else fallback_bg if fallback_bg is not None else default_bg,
+        )
         attrs = theme_style.attrs if theme_style.attrs else (ATTR_BOLD if is_active else 0)
         return fg, bg, attrs
 

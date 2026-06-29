@@ -16,6 +16,10 @@ This project is a modal editor similar to Neovim, but written in Python. The pri
 - if a new feature has new keymaps, make sure to add them to init.py and document them in `notes/keys.md` (single source of truth for keybindings)
 
 
+### Dev Setup (after clone or fresh pull)
+- After `uv sync`, run `uvx pre-commit install` to activate commit hooks (ruff, mypy)
+- This is a one-time step per clone; skipping it means lint errors can slip into commits
+
 ### Code Style
 - This is a uv-managed project: use `uv run` instead of `python` directly
 - Line length limit: 120 characters

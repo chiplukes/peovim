@@ -55,6 +55,7 @@ uv tool install --reinstall .
 
 ```bash
 uv sync --extra dev
+uvx pre-commit install   # activates lint/format hooks on every commit
 uv run peovim            # always runs from the repo's virtualenv
 ```
 

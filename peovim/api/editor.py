@@ -427,7 +427,7 @@ class EditorAPI:  # cm:6d5a2c
         doc.path = None
         doc.filetype = filetype
         if name:
-            setattr(doc, "name", name)
+            doc.name = name
         self._workspace.add_document(doc)
 
         win = self._workspace.active_window
