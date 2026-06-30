@@ -1915,6 +1915,7 @@ class ModalEngine:  # cm:5c8e7a
         # --- Buffer lifecycle ---
         self._add(N, "<C-o>", lambda s: [JumpBack(s.effective_count_a())])
         self._add(N, "<C-i>", lambda s: [JumpForward(s.effective_count_a())])
+        self._add(N, "<Tab>", lambda s: [JumpForward(s.effective_count_a())])
 
     def _motion(self, motion_fn: MotionFn, count: int) -> tuple[int, int]:
         """Helper: call a motion function with current engine state."""
