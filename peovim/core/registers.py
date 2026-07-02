@@ -126,11 +126,36 @@ class RegisterStore:  # cm:f3d2c6
 
             if sys.platform == "darwin":
                 result = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=2)
-            else:
-                result = subprocess.run(
-                    ["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True, timeout=2
+                return result.stdout if result.returncode == 0 else ""
+
+            # Linux: try Wayland first, then X11 tools
+            import os
+
+            candidates: list[list[str]] = []
+            if os.environ.get("WAYLAND_DISPLAY"):
+                candidates.append(["wl-paste", "--no-newline"])
+            if os.environ.get("DISPLAY"):
+                candidates.extend(
+                    [
+                        ["xclip", "-selection", "clipboard", "-o"],
+                        ["xsel", "--clipboard", "--output"],
+                    ]
                 )
-            return result.stdout if result.returncode == 0 else ""
+            # Fallback: try all tools regardless of env vars
+            if not candidates:
+                candidates = [
+                    ["wl-paste", "--no-newline"],
+                    ["xclip", "-selection", "clipboard", "-o"],
+                    ["xsel", "--clipboard", "--output"],
+                ]
+            for cmd in candidates:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
+                    if result.returncode == 0:
+                        return result.stdout
+                except FileNotFoundError:
+                    continue
+            return ""
         except Exception:
             return ""
 
@@ -145,11 +170,35 @@ class RegisterStore:  # cm:f3d2c6
 
             if sys.platform == "darwin":
                 result = subprocess.run(["pbcopy"], input=text.encode(), timeout=2, check=False)
-            else:
-                result = subprocess.run(
-                    ["xclip", "-selection", "clipboard"], input=text.encode(), timeout=2, check=False
+                return result.returncode == 0
+
+            # Linux: try Wayland first, then X11 tools
+            import os
+
+            candidates: list[list[str]] = []
+            if os.environ.get("WAYLAND_DISPLAY"):
+                candidates.append(["wl-copy"])
+            if os.environ.get("DISPLAY"):
+                candidates.extend(
+                    [
+                        ["xclip", "-selection", "clipboard"],
+                        ["xsel", "--clipboard", "--input"],
+                    ]
                 )
-            return result.returncode == 0
+            if not candidates:
+                candidates = [
+                    ["wl-copy"],
+                    ["xclip", "-selection", "clipboard"],
+                    ["xsel", "--clipboard", "--input"],
+                ]
+            for cmd in candidates:
+                try:
+                    result = subprocess.run(cmd, input=text.encode(), timeout=2, check=False)
+                    if result.returncode == 0:
+                        return True
+                except FileNotFoundError:
+                    continue
+            return False
         except Exception:
             return False
 
