@@ -129,6 +129,20 @@ _BASENAME_MAP: dict[str, str] = {
     "brewfile": "ruby",
     "vagrantfile": "ruby",
     "justfile": "make",
+    # Shell dotfiles (no extension)
+    ".bashrc": "bash",
+    ".bash_profile": "bash",
+    ".bash_aliases": "bash",
+    ".bash_logout": "bash",
+    ".bash_history": "bash",
+    ".zshrc": "bash",
+    ".zprofile": "bash",
+    ".zshenv": "bash",
+    ".zlogin": "bash",
+    ".zlogout": "bash",
+    ".profile": "bash",
+    ".kshrc": "bash",
+    ".mkshrc": "bash",
 }
 
 _SHEBANG_MAP: list[tuple[str, str]] = [
