@@ -32,7 +32,7 @@ def _move_to_jump_target(
     # Restore the saved viewport, then ensure cursor is actually visible
     # (scroll_to_cursor is a no-op if cursor already falls within the window).
     dispatcher.window.scroll_line = max(0, scroll_line)
-    dispatcher.window.scroll_to_cursor()
+    dispatcher.window.scroll_to_cursor(center=True)
 
 
 def handle_navigation_action(dispatcher: ActionDispatcher, action: object, doc: Document, cur: Cursor) -> bool:

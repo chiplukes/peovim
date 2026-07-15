@@ -41,19 +41,24 @@ class Window:  # cm:8f2d5b
     # Scroll helpers
     # ------------------------------------------------------------------
 
-    def scroll_to_cursor(self, text_width: int | None = None) -> None:
+    def scroll_to_cursor(self, text_width: int | None = None, *, center: bool = False) -> None:
         """Adjust scroll_line and scroll_col so cursor is visible, respecting scrolloff/sidescrolloff.
 
         text_width: visible text columns (window width minus gutter). When None,
         self.width is used as a conservative fallback — callers with accurate
         gutter info should pass the real value.
+
+        center: when True and the cursor is outside the current viewport, center the
+        cursor in the window instead of just ensuring it is visible.
         """
         self.follow_cursor = True
 
         # --- Vertical ---
         so = int(self.options.get("scrolloff", 0))
         target = self.cursor.line
-        if target - so < self.scroll_line:
+        if center and (target < self.scroll_line or target >= self.scroll_line + self.height):
+            self.scroll_line = max(0, target - self.height // 2)
+        elif target - so < self.scroll_line:
             self.scroll_line = max(0, target - so)
         elif target + so >= self.scroll_line + self.height:
             self.scroll_line = target + so - self.height + 1

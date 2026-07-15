@@ -416,7 +416,12 @@ class EditorAPI:  # cm:6d5a2c
 
         win = self._workspace.active_window
         win.cursor.move_to(max(0, line), max(0, col))
-        win.scroll_to_cursor()
+        win.scroll_to_cursor(center=line > 0)
+
+        if line > 0 or col > 0:
+            jumplist = getattr(self._dispatcher, "jumplist", None)
+            if jumplist is not None:
+                jumplist.push(max(0, line), max(0, col), str(target), win.scroll_line)
 
     def open_scratch_buffer(self, text: str = "", *, filetype: str = "", name: str = "") -> Any:
         """Open scratch text in the active window and return its BufferAPI."""

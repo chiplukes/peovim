@@ -139,6 +139,13 @@ def handle_compound_action(d: ActionDispatcher, action: CompoundAction, doc: Doc
 def handle_move_cursor(d: ActionDispatcher, action: MoveCursor, doc: Document, cur: Cursor) -> None:
     prev_line, prev_col = cur.line, cur.col
     line = max(0, min(action.line, doc.line_count() - 1))
+    if action.add_to_jumplist and d.jumplist is not None and (prev_line != line or prev_col != action.col):
+        d.jumplist.push(
+            prev_line,
+            prev_col,
+            str(doc.path) if doc.path else "",
+            d.window.scroll_line,
+        )
     cur.move_to(line, action.col)
     d._clamp_cursor_for_mode(doc)
     if cur.line != prev_line or cur.col != prev_col:

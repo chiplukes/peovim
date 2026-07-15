@@ -96,7 +96,7 @@ class LspUiAdapter:
         host._dispatcher.dispatch([OpenBuffer(path)])
         win = host._workspace.active_window
         win.cursor.move_to(line, col)
-        win.scroll_to_cursor()
+        win.scroll_to_cursor(center=line > 0)
         jumplist = getattr(host._dispatcher, "jumplist", None)
         if jumplist is not None:
             jumplist.push(max(0, line), max(0, col), str(Path(path).resolve()), win.scroll_line)
