@@ -140,3 +140,79 @@ class TestMovement:
         cur.move_to(1, 0)
         cur.move_down(buf)
         assert cur.line == 1
+
+
+class TestDispatcherVerticalMove:
+    def test_j_preserves_virtual_col_through_dispatcher(self):
+        from peovim.core.document import Document
+        from peovim.core.editor_state import EditorState
+        from peovim.core.registers import RegisterStore
+        from peovim.core.window import Window
+        from peovim.core.workspace import Workspace
+        from peovim.modal.actions import MoveCursor
+        from peovim.modal.dispatcher import ActionDispatcher
+        from peovim.modal.engine import ModalEngine
+
+        doc = Document()
+        doc.load_string("long line here\nshort\nanother long line here")
+        window = Window(doc)
+        engine = ModalEngine()
+        engine.set_document(doc)
+        engine.set_cursor(0, 0)
+        engine.set_line_count(doc.line_count())
+        dispatcher = ActionDispatcher(
+            engine,
+            window,
+            RegisterStore(),
+            editor_state=EditorState(),
+            workspace=Workspace(window),
+        )
+
+        cur = window.cursor
+        cur.move_to(0, 15)
+        assert cur.virtual_col == 15
+
+        dispatcher.dispatch([MoveCursor(1, 15)])
+        assert cur.line == 1
+        assert cur.col == 4
+        assert cur.virtual_col == 15
+
+        dispatcher.dispatch([MoveCursor(2, 4)])
+        assert cur.line == 2
+        assert cur.col == 15
+        assert cur.virtual_col == 15
+
+    def test_non_vertical_move_resets_virtual_col(self):
+        from peovim.core.document import Document
+        from peovim.core.editor_state import EditorState
+        from peovim.core.registers import RegisterStore
+        from peovim.core.window import Window
+        from peovim.core.workspace import Workspace
+        from peovim.modal.actions import MoveCursor
+        from peovim.modal.dispatcher import ActionDispatcher
+        from peovim.modal.engine import ModalEngine
+
+        doc = Document()
+        doc.load_string("long line here\nshort\nanother long line here")
+        window = Window(doc)
+        engine = ModalEngine()
+        engine.set_document(doc)
+        engine.set_cursor(0, 0)
+        engine.set_line_count(doc.line_count())
+        dispatcher = ActionDispatcher(
+            engine,
+            window,
+            RegisterStore(),
+            editor_state=EditorState(),
+            workspace=Workspace(window),
+        )
+
+        cur = window.cursor
+        cur.move_to(0, 15)
+        assert cur.virtual_col == 15
+
+        dispatcher.dispatch([MoveCursor(1, 15)])
+        assert cur.virtual_col == 15
+
+        dispatcher.dispatch([MoveCursor(1, 3)])
+        assert cur.virtual_col == 3

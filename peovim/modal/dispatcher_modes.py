@@ -146,7 +146,17 @@ def handle_move_cursor(d: ActionDispatcher, action: MoveCursor, doc: Document, c
             str(doc.path) if doc.path else "",
             d.window.scroll_line,
         )
-    cur.move_to(line, action.col)
+
+    if action.col == prev_col and action.line != prev_line:
+        delta = action.line - prev_line
+        if delta > 0:
+            for _ in range(delta):
+                cur.move_down(doc._table, preserve_virtual=True)
+        else:
+            for _ in range(-delta):
+                cur.move_up(doc._table, preserve_virtual=True)
+    else:
+        cur.move_to(line, action.col)
     d._clamp_cursor_for_mode(doc)
     if cur.line != prev_line or cur.col != prev_col:
         d._emit_later("cursor_moved", buf_id=d._buf_id, line=cur.line, col=cur.col)
