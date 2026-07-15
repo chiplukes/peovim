@@ -103,9 +103,9 @@ def _make_catppuccin() -> Theme:
     g["variable.builtin"] = Style(fg=red)
     g["variable.parameter"] = Style(fg=maroon)
 
-    g["constant"] = Style(fg=rosewater, attrs=ATTR_BOLD)
+    g["constant"] = Style(fg=sapphire, attrs=ATTR_BOLD)
     g["constant.builtin"] = Style(fg=peach)
-    g["constant.macro"] = Style(fg=rosewater, attrs=ATTR_BOLD)
+    g["constant.macro"] = Style(fg=sapphire, attrs=ATTR_BOLD)
 
     g["operator"] = Style(fg=sky)
 
@@ -191,7 +191,7 @@ def _make_gruvbox() -> Theme:
     g["variable.parameter"] = Style(fg=fg4)
     g["parameter"] = Style(fg=fg4)
 
-    g["constant"] = Style(fg=fg1, attrs=ATTR_BOLD)
+    g["constant"] = Style(fg=bright_blue, attrs=ATTR_BOLD)
     g["constant.builtin"] = Style(fg=bright_purple)
 
     g["operator"] = Style(fg=neutral_aqua)
@@ -264,7 +264,7 @@ def _make_onedark() -> Theme:
     g["variable.parameter"] = Style(fg=red)
     g["parameter"] = Style(fg=red)
 
-    g["constant"] = Style(fg=fg_light, attrs=ATTR_BOLD)
+    g["constant"] = Style(fg=blue, attrs=ATTR_BOLD)
     g["constant.builtin"] = Style(fg=orange)
 
     g["operator"] = Style(fg=cyan)

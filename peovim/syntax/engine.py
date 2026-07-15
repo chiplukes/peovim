@@ -22,8 +22,22 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
-# HighlightSpan
-# ---------------------------------------------------------------------------
+# Lower = painted first (overridden by higher-priority spans at the same position).
+# Matches from more-specific query rules (constant, function.builtin) must
+# override generic ones (variable) when they overlap on the same node.
+_GROUP_PRIORITY: dict[str, int] = {
+    "variable": 10,
+    "constructor": 12,
+    "function": 10,
+    "function.builtin": 15,
+    "function.method": 12,
+    "property": 12,
+    "type": 12,
+    "constant": 20,
+    "constant.builtin": 15,
+    "constant.macro": 20,
+}
+_DEFAULT_GROUP_PRIORITY = 8
 
 
 @dataclass(frozen=True)
@@ -174,13 +188,14 @@ def _parse_task(
         spans: list[HighlightSpan] = []
         for capture_name, nodes in captures.items():
             group = capture_name.lstrip("@")
+            priority = _GROUP_PRIORITY.get(group, _DEFAULT_GROUP_PRIORITY)
             for node in nodes:
                 sp = node.start_point  # (row, col)
                 ep = node.end_point
-                spans.append(HighlightSpan(sp[0], sp[1], ep[0], ep[1], group))
+                spans.append(HighlightSpan(sp[0], sp[1], ep[0], ep[1], group, priority=priority))
 
-        # Sort by position so the renderer can short-circuit per line
-        spans.sort(key=lambda s: (s.start_line, s.start_col))
+        # Sort by position, then by priority (higher = painted later, wins overlap).
+        spans.sort(key=lambda s: (s.start_line, s.start_col, s.priority))
         return spans
 
     except Exception:
