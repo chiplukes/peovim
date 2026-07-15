@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import signal
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
@@ -116,6 +117,8 @@ class EventLoop:  # cm:e4d6b5
         self._running: bool = False
         self._fps: int = 60
         self._frame_event: asyncio.Event | None = None
+        self._resize_check_time: float = 0.0
+        self._last_known_size: tuple[int, int] | None = None
         self._current_layout: dict = {}
         self._mouse_dispatcher = MouseDispatcher(
             workspace,
@@ -230,6 +233,16 @@ class EventLoop:  # cm:e4d6b5
     def _consume_invalidation_reasons(self) -> set[str]:
         return self._render_cycle.consume_invalidation_reasons()
 
+    def _on_terminal_resize(self, *args: object) -> None:
+        if self._grid is None:
+            return
+        cols, rows = self._backend.get_size()
+        if (cols, rows) != self._last_known_size:
+            self._last_known_size = (cols, rows)
+            self._invalidate("resize")
+            if self._editor_state is not None:
+                self._editor_state.event_bus.emit("window_resized", cols=cols, rows=rows)
+
     async def run(self) -> None:  # cm:6f9a2d
         """Start the event loop. Blocks until quit."""
         self._running = True
@@ -237,8 +250,11 @@ class EventLoop:  # cm:e4d6b5
         previous_exception_handler = loop.get_exception_handler()
         loop.set_exception_handler(self._handle_asyncio_exception)
         cols, rows = self._backend.get_size()
+        self._last_known_size = (cols, rows)
         self._grid = CellGrid(cols, rows)
         self._backend.enter_raw_mode()
+        if hasattr(signal, "SIGWINCH"):
+            loop.add_signal_handler(signal.SIGWINCH, self._on_terminal_resize)
         # Register :KeyEcho command now that dispatcher is wired
         try:
             reg = self._dispatcher._command_registry
@@ -258,6 +274,9 @@ class EventLoop:  # cm:e4d6b5
                 self._render_loop(),
             )
         finally:
+            if hasattr(signal, "SIGWINCH"):
+                with contextlib.suppress(NotImplementedError):
+                    loop.remove_signal_handler(signal.SIGWINCH)
             loop.set_exception_handler(previous_exception_handler)
             if self._editor_state is not None:
                 self._editor_state.event_bus.emit("editor_shutdown")
@@ -304,6 +323,13 @@ class EventLoop:  # cm:e4d6b5
             lsp_q = len(self._lsp_queue) if self._lsp_queue is not None else 0  # type: ignore[arg-type]
             now = time.monotonic()
             self._run_render_maintenance(now)
+            if now - self._resize_check_time > 0.4:
+                self._resize_check_time = now
+                if self._grid is not None:
+                    cols, rows = self._backend.get_size()
+                    if (cols, rows) != self._last_known_size:
+                        self._last_known_size = (cols, rows)
+                        self._invalidate("resize")
             t1 = time.perf_counter()
             was_dirty = self._dirty
             self._render_if_dirty()
