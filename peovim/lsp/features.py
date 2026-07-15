@@ -9,6 +9,7 @@ definition, completion, references, rename, diagnostics).
 from __future__ import annotations
 
 import logging
+import pathlib
 from collections import deque
 from collections.abc import Callable
 from copy import deepcopy
@@ -38,6 +39,7 @@ _CLIENT_CAPABILITIES = {
     },
     "workspace": {
         "applyEdit": False,
+        "workspaceFolders": True,
     },
 }
 
@@ -81,9 +83,15 @@ class LspFeatures:  # cm:c8a1e6
 
     async def initialize(self, root_uri: str) -> None:
         """Send LSP initialize handshake."""
-        params = {
+        params: dict[str, Any] = {
             "processId": None,
             "rootUri": root_uri,
+            "workspaceFolders": [
+                {
+                    "uri": root_uri,
+                    "name": pathlib.PurePosixPath(uri_to_path(root_uri)).name or "workspace",
+                }
+            ],
             "capabilities": _CLIENT_CAPABILITIES,
             "initializationOptions": self._init_options,
         }

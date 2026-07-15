@@ -584,6 +584,19 @@ class TestManagerHelpers:
         root = _find_root(str(f), ["nonexistent_marker"])
         assert root == str(tmp_path)
 
+    def test_find_root_skips_submodule_git_file(self, tmp_path):
+        from peovim.lsp.manager import _find_root
+
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        sub = tmp_path / "lib" / "submod" / "src" / "util.py"
+        sub.parent.mkdir(parents=True)
+        sub.touch()
+        sub_git = tmp_path / "lib" / "submod" / ".git"
+        sub_git.write_text("gitdir: ../../.git/modules/submod")
+        root = _find_root(str(sub), [".git"])
+        assert root == str(tmp_path)
+
     def test_detect_filetype(self):
         from peovim.lsp.manager import _detect_filetype
 

@@ -391,12 +391,21 @@ class LspManager:  # cm:2b9e4c
 
 
 def _find_root(path: str, markers: list[str]) -> str:
-    """Walk up from path's directory looking for root markers."""
+    """Walk up from path's directory looking for root markers.
+
+    A .git file (rather than a directory) indicates a git submodule
+    checkout.  We skip those and keep walking up so that the LSP
+    workspace root is the superproject, not the submodule.
+    """
     p = pathlib.Path(path).resolve().parent
     while True:
         for marker in markers:
-            if (p / marker).exists():
-                return str(p)
+            candidate = p / marker
+            if not candidate.exists():
+                continue
+            if marker == ".git" and not candidate.is_dir():
+                continue
+            return str(p)
         parent = p.parent
         if parent == p:
             break
