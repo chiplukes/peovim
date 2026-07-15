@@ -39,6 +39,7 @@ def handle_search_action(dispatcher: ActionDispatcher, action: object, doc: Docu
                 )
                 if result:
                     cur.move_to(result[0], result[1])
+                    dispatcher.window.scroll_to_cursor(center=True)
         return True
 
     if isinstance(action, SearchNext):
@@ -61,6 +62,8 @@ def handle_search_action(dispatcher: ActionDispatcher, action: object, doc: Docu
                     cur.move_to(result[0], result[1])
                 else:
                     break
+            if result:
+                dispatcher.window.scroll_to_cursor(center=True)
         return True
 
     if isinstance(action, SearchWordUnderCursor):
@@ -96,8 +99,9 @@ def handle_search_action(dispatcher: ActionDispatcher, action: object, doc: Docu
                         direction,
                         wrapscan=dispatcher.window.options.get("wrapscan", True),
                     )
-                    if result:
-                        cur.move_to(result[0], result[1])
+                if result:
+                    cur.move_to(result[0], result[1])
+                    dispatcher.window.scroll_to_cursor(center=True)
         return True
 
     if isinstance(action, ClearSearchHighlight):
