@@ -73,6 +73,8 @@ class Window:  # cm:8f2d5b
             line_text = self.document.get_line(self.cursor.line)
         except Exception:
             return
+        if self.scroll_col > len(line_text):
+            self.scroll_col = 0
         cursor_dcol = logical_col_to_display_col(line_text, self.cursor.col, tabstop)
         scroll_dcol = logical_col_to_display_col(line_text, self.scroll_col, tabstop)
         if cursor_dcol < scroll_dcol + sso:
