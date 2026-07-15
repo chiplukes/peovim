@@ -597,6 +597,20 @@ class TestManagerHelpers:
         root = _find_root(str(sub), [".git"])
         assert root == str(tmp_path)
 
+    def test_find_root_prefers_git_over_subdir_marker(self, tmp_path):
+        from peovim.lsp.manager import _find_root
+
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        pkg_dir = tmp_path / "pkg"
+        pkg_dir.mkdir()
+        (pkg_dir / "pyproject.toml").touch()
+        sub = tmp_path / "pkg" / "inner" / "mod.py"
+        sub.parent.mkdir(parents=True)
+        sub.touch()
+        root = _find_root(str(sub), [".git", "pyproject.toml"])
+        assert root == str(tmp_path)
+
     def test_detect_filetype(self):
         from peovim.lsp.manager import _detect_filetype
 

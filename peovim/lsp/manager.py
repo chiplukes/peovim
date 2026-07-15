@@ -396,8 +396,31 @@ def _find_root(path: str, markers: list[str]) -> str:
     A .git file (rather than a directory) indicates a git submodule
     checkout.  We skip those and keep walking up so that the LSP
     workspace root is the superproject, not the submodule.
+
+    When ``.git`` is among the markers, a .git directory found
+    further up always takes precedence over non-.git markers
+    (pyproject.toml, setup.py, etc.) discovered closer to the file.
+    This prevents a subdirectory package with its own pyproject.toml
+    from being treated as the workspace root.
     """
     p = pathlib.Path(path).resolve().parent
+
+    # First pass: look for the outermost .git directory.
+    if ".git" in markers:
+        current = p
+        git_root: str | None = None
+        while True:
+            candidate = current / ".git"
+            if candidate.is_dir():
+                git_root = str(current)
+            parent = current.parent
+            if parent == current:
+                break
+            current = parent
+        if git_root is not None:
+            return git_root
+
+    # Second pass: walk up looking for any other root marker.
     while True:
         for marker in markers:
             candidate = p / marker
