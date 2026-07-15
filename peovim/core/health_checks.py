@@ -195,6 +195,31 @@ def check_optional_deps(api: Any, plugin_manager: Any, config_loader: Any) -> li
 # ---------------------------------------------------------------------------
 
 
+def check_native_renderer(api: Any, plugin_manager: Any, config_loader: Any) -> list[HealthItem]:
+    from peovim._native import HAS_NATIVE as _HAS_NATIVE
+
+    if _HAS_NATIVE:
+        return [
+            HealthItem(
+                "ok",
+                "Cython-accelerated renderer is active",
+                detail="cell_grid and window_renderer compiled extensions loaded",
+            )
+        ]
+    return [
+        HealthItem(
+            "warn",
+            "Cython-accelerated renderer is not available — falling back to pure Python",
+            detail=(
+                "The native renderer was not compiled, likely because a C compiler "
+                "(and the Python development headers) were not available at build time. "
+                "Install GCC/Clang and the python<pyver>-dev package, then rebuild with "
+                "'pip install -e .' (or equivalent) to enable the native renderer."
+            ),
+        )
+    ]
+
+
 def check_render_runtime(api: Any, plugin_manager: Any, config_loader: Any) -> list[HealthItem]:
     items: list[HealthItem] = []
 

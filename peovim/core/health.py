@@ -164,6 +164,7 @@ def build_registry() -> HealthRegistry:
         check_data_dirs,
         check_editor_version,
         check_lsp,
+        check_native_renderer,
         check_optional_deps,
         check_persistence,
         check_plugins,
@@ -178,6 +179,7 @@ def build_registry() -> HealthRegistry:
     reg.register("python", check_python_env, label="Python Environment")
     reg.register("syntax", check_syntax, label="Syntax Highlighting")
     reg.register("optional", check_optional_deps, label="Optional Dependencies")
+    reg.register("native", check_native_renderer, label="Native Renderer")
     reg.register("render", check_render_runtime, label="Render Runtime")
     reg.register("terminal", check_terminal, label="Terminal Environment")
     reg.register("data_dirs", check_data_dirs, label="Data Directories")
