@@ -67,7 +67,18 @@ class OverlayPresentationController:
                     text = completion_popup.accept()
                     if text:
                         cur = host._dispatcher.window.cursor
-                        host._dispatcher.dispatch([InsertText(cur.line, cur.col, text)])
+                        insert_line, insert_col = cur.line, cur.col
+                        host._dispatcher.dispatch([InsertText(insert_line, insert_col, text)])
+                        item = getattr(completion_popup, "_selected_item", None)
+                        if item:
+                            cl = item.get("cursorLine")
+                            cc = item.get("cursorCol")
+                            if cl is not None and cc is not None and "\n" in text:
+                                from peovim.modal.actions import MoveCursor
+
+                                cl = max(0, cl)
+                                cc = max(0, cc)
+                                host._dispatcher.dispatch([MoveCursor(insert_line + cl, cc)])
                     host._invalidate("full")
                     return True
                 if completion_popup.feed_key(key):

@@ -244,6 +244,7 @@ All implemented against the public `peovim.api` — no internal imports.
 | `autopairs.py` | Auto-close `(`, `[`, `{`, `"`, `'`, `` ` `` in insert mode |
 | `commentary.py` | `gcc` / `gc{motion}` comments |
 | `surround.py` | `ys`, `cs`, `ds` — add/change/delete surrounding pairs |
+| `snippets.py` | Snippet expansion via VSCode-format JSON files |
 | `vcssigns.py` | Shared VCS sign helpers: `register_sign_defs`, `update_signs`, `current_hunks`, `next_hunk`, `prev_hunk` — parameterised by `get_hunks_fn`; used by gitsigns and svnsigns |
 | `gitsigns.py` | Gutter signs for added/changed/deleted lines plus the minimal git panel shell (`<leader>gs`) with summary, branches, status, remotes, git-driven diff launch from status rows, and a scratch git log browser |
 | `formatter.py` | External formatter runner; triggered by `:Format` / `buffer_pre_save` |

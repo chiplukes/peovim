@@ -71,6 +71,7 @@ class CompletionPopup:
         self._filter: str = ""
         self._match_mode: str = "substring"
         self._replace_filter_on_accept: bool = False
+        self._selected_item: dict | None = None
 
     @property
     def is_open(self) -> bool:
@@ -109,6 +110,7 @@ class CompletionPopup:
         if not filtered or self._selected >= len(filtered):
             return None
         item = filtered[self._selected]
+        self._selected_item = item
         text = item.get("insertText") or item.get("label", "")
         if self._replace_filter_on_accept and self._filter and text.startswith(self._filter):
             text = text[len(self._filter) :]
@@ -169,10 +171,13 @@ class CompletionPopup:
         visible = filtered[self._scroll : self._scroll + _MAX_VISIBLE]
         n_visible = len(visible)
 
-        # Compute width from items
+        # Compute width from items (label + detail)
         width = _MIN_WIDTH
         for it in visible:
             label_w = len(it.get("label", "")) + 5  # kind prefix + space
+            det = it.get("detail", "")
+            if det:
+                label_w += 2 + len(det)  # space + detail
             width = max(width, min(label_w, _MAX_WIDTH))
         width = min(width, grid.width - 2)
 
