@@ -12,6 +12,7 @@ See notes/architecture.md for the component design overview.
 
 from __future__ import annotations
 
+import subprocess
 from typing import Literal
 
 # Register content type
@@ -22,6 +23,61 @@ _READ_ONLY = frozenset({".", "%"})
 
 # Special writable registers
 _SPECIAL_WRITABLE = frozenset({'"', "/", ":", "*", "+", "=", "#", "-"})
+
+
+def _is_wsl() -> bool:
+    """Return True when running under Windows Subsystem for Linux."""
+    try:
+        with open("/proc/version", encoding="utf-8") as f:
+            return "microsoft" in f.read().lower()
+    except OSError:
+        return False
+
+
+def _build_linux_read_candidates() -> list[list[str]]:
+    """Build an ordered list of candidate clipboard-read commands for Linux."""
+    import os
+
+    candidates: list[list[str]] = []
+    if os.environ.get("WAYLAND_DISPLAY"):
+        candidates.append(["wl-paste", "--no-newline"])
+    if os.environ.get("DISPLAY"):
+        candidates.extend(
+            [
+                ["xclip", "-selection", "clipboard", "-o"],
+                ["xsel", "--clipboard", "--output"],
+            ]
+        )
+    if not candidates:
+        candidates = [
+            ["wl-paste", "--no-newline"],
+            ["xclip", "-selection", "clipboard", "-o"],
+            ["xsel", "--clipboard", "--output"],
+        ]
+    return candidates
+
+
+def _build_linux_write_candidates() -> list[list[str]]:
+    """Build an ordered list of candidate clipboard-write commands for Linux."""
+    import os
+
+    candidates: list[list[str]] = []
+    if os.environ.get("WAYLAND_DISPLAY"):
+        candidates.append(["wl-copy"])
+    if os.environ.get("DISPLAY"):
+        candidates.extend(
+            [
+                ["xclip", "-selection", "clipboard"],
+                ["xsel", "--clipboard", "--input"],
+            ]
+        )
+    if not candidates:
+        candidates = [
+            ["wl-copy"],
+            ["xclip", "-selection", "clipboard"],
+            ["xsel", "--clipboard", "--input"],
+        ]
+    return candidates
 
 
 class RegisterStore:  # cm:f3d2c6
@@ -122,32 +178,16 @@ class RegisterStore:  # cm:f3d2c6
 
             if sys.platform == "win32":
                 return self._read_clipboard_win32()
-            import subprocess
 
             if sys.platform == "darwin":
                 result = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=2)
                 return result.stdout if result.returncode == 0 else ""
 
-            # Linux: try Wayland first, then X11 tools
-            import os
+            candidates: list[list[str]] = _build_linux_read_candidates()
+            candidates.append(
+                ["powershell.exe", "-NoLogo", "-Command", "[Console]::Out.Write((Get-Clipboard))"]
+            )
 
-            candidates: list[list[str]] = []
-            if os.environ.get("WAYLAND_DISPLAY"):
-                candidates.append(["wl-paste", "--no-newline"])
-            if os.environ.get("DISPLAY"):
-                candidates.extend(
-                    [
-                        ["xclip", "-selection", "clipboard", "-o"],
-                        ["xsel", "--clipboard", "--output"],
-                    ]
-                )
-            # Fallback: try all tools regardless of env vars
-            if not candidates:
-                candidates = [
-                    ["wl-paste", "--no-newline"],
-                    ["xclip", "-selection", "clipboard", "-o"],
-                    ["xsel", "--clipboard", "--output"],
-                ]
             for cmd in candidates:
                 try:
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
@@ -166,31 +206,14 @@ class RegisterStore:  # cm:f3d2c6
 
             if sys.platform == "win32":
                 return self._write_clipboard_win32(text)
-            import subprocess
 
             if sys.platform == "darwin":
                 result = subprocess.run(["pbcopy"], input=text.encode(), timeout=2, check=False)
                 return result.returncode == 0
 
-            # Linux: try Wayland first, then X11 tools
-            import os
+            candidates: list[list[str]] = _build_linux_write_candidates()
+            candidates.append(["clip.exe"])
 
-            candidates: list[list[str]] = []
-            if os.environ.get("WAYLAND_DISPLAY"):
-                candidates.append(["wl-copy"])
-            if os.environ.get("DISPLAY"):
-                candidates.extend(
-                    [
-                        ["xclip", "-selection", "clipboard"],
-                        ["xsel", "--clipboard", "--input"],
-                    ]
-                )
-            if not candidates:
-                candidates = [
-                    ["wl-copy"],
-                    ["xclip", "-selection", "clipboard"],
-                    ["xsel", "--clipboard", "--input"],
-                ]
             for cmd in candidates:
                 try:
                     result = subprocess.run(cmd, input=text.encode(), timeout=2, check=False)
