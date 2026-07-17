@@ -94,11 +94,8 @@ class RegisterStore:  # cm:f3d2c6
         self._store: dict[str, tuple[str, RegKind]] = {}
         # Clipboard access disabled by default; set by environment at startup
         self._clipboard_enabled: bool = False
-        # Whether the last write to each clipboard register succeeded.
-        # Used to detect when OpenClipboard() was locked by another process so
-        # get() can fall back to the cached value instead of returning stale
-        # clipboard content (the intermittent yw/ye + p bug).
-        self._clipboard_write_ok: dict[str, bool] = {}
+        # Timestamp (monotonic) of last write to each clipboard register.
+        self._clipboard_write_time: dict[str, float] = {}
 
     # ------------------------------------------------------------------
     # Get / set
@@ -109,17 +106,19 @@ class RegisterStore:  # cm:f3d2c6
         if name == "_":
             return ("", "char")
         if name == "*" or name == "+":
+            import time
+
             clipboard_text = self._read_clipboard()
             cached = self._store.get(name)
             if cached is not None:
                 if cached[0] == clipboard_text:
-                    # Clipboard still holds our last write; preserve the yank kind.
                     return clipboard_text, cached[1]
-                write_ok = self._clipboard_write_ok.get(name, True)
-                if not clipboard_text or not write_ok:
-                    # Clipboard is empty, or our last write failed (e.g. OpenClipboard
-                    # was locked by another process). Use the in-memory cache so that
-                    # yw/ye + p always pastes what was just yanked.
+                # Clipboard changed externally since our last write.
+                # If our write was recent (within 2 s), prefer the cached
+                # yank over the external change; otherwise trust the fresh
+                # clipboard (e.g. user copied from a browser).
+                write_time = self._clipboard_write_time.get(name, 0)
+                if time.monotonic() - write_time < 2.0:
                     return cached
             return clipboard_text, "char"
         if name in _READ_ONLY and name not in self._store:
@@ -143,10 +142,11 @@ class RegisterStore:  # cm:f3d2c6
 
         # Named or special register
         if name == "*" or name == "+":
-            self._clipboard_write_ok[name] = self._write_clipboard(text)
-            # Store in memory so get() can recover the kind on round-trip and
-            # fall back gracefully if the system clipboard write fails.
+            import time
+
+            self._write_clipboard(text)
             self._store[name] = (text, kind)
+            self._clipboard_write_time[name] = time.monotonic()
             return
 
         self._store[name.lower()] = (text, kind)

@@ -81,13 +81,27 @@ class TestClipboardRegister:
         assert kind == "line"
 
     def test_clipboard_write_success_external_change_uses_clipboard(self, monkeypatch):
-        """When write succeeds but another app later changes clipboard, return clipboard content."""
+        """When write is old and another app changes clipboard, return clipboard content."""
+        import time
+
+        rs = RegisterStore()
+        monkeypatch.setattr(rs, "_write_clipboard", lambda text: True)
+        monkeypatch.setattr(rs, "_read_clipboard", lambda: "from browser")
+        rs.set("+", "yanked word", "char")
+        # Simulate an old write so the 2 s grace period has expired
+        rs._clipboard_write_time["+"] = time.monotonic() - 3.0
+        text, kind = rs.get("+")
+        assert text == "from browser"
+        assert kind == "char"
+
+    def test_clipboard_recent_write_prefers_cache_over_external_change(self, monkeypatch):
+        """When write is recent, prefer cached yank over clipboard changed externally."""
         rs = RegisterStore()
         monkeypatch.setattr(rs, "_write_clipboard", lambda text: True)
         monkeypatch.setattr(rs, "_read_clipboard", lambda: "from browser")
         rs.set("+", "yanked word", "char")
         text, kind = rs.get("+")
-        assert text == "from browser"
+        assert text == "yanked word"
         assert kind == "char"
 
     def test_clipboard_empty_falls_back_to_cache(self, monkeypatch):
