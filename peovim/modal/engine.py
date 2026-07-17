@@ -1525,7 +1525,7 @@ class ModalEngine:  # cm:5c8e7a
                 return [IndentRange(start_line, end_line, "out")]
             case ":":
                 self._remember_visual_selection((line, col))
-                return [EnterCommandMode(":", "'<,'>'")]
+                return [EnterCommandMode(":", "'<,'>")]
             case _:
                 return []
 

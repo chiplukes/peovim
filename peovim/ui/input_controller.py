@@ -95,7 +95,8 @@ class InputController:
 
         # Confirm-substitute mode intercepts all keys
         if host._editor_state is not None and host._editor_state.confirm_sub is not None:
-            return self._handle_confirm_sub_key(normalized_event.key)
+            self._handle_confirm_sub_key(normalized_event.key)
+            return False
 
         normal_key_after: str | None = None
         if host._cmdline.active:
@@ -111,7 +112,7 @@ class InputController:
                 cs = host._editor_state.confirm_sub
                 if cs is not None and not cs.initialized:
                     self._init_confirm_sub(cs)
-                    return True
+                    return False
 
         if not host._cmdline.active and host._handle_overlay_key(normalized_event.key):
             return False
@@ -307,7 +308,6 @@ class InputController:
     def _init_confirm_sub(self, cs: object) -> None:
         """Move cursor to the first match and show the initial prompt."""
         from peovim.core.editor_state import ConfirmSubState
-        from peovim.modal.actions import MoveCursor
 
         if not isinstance(cs, ConfirmSubState):
             return
@@ -316,13 +316,15 @@ class InputController:
         cur = cs.current
         if cur is not None:
             line, col_start, _col_end, _rep = cur
-            host._dispatcher.dispatch([MoveCursor(line, col_start)])
+            win = host._dispatcher.window
+            win.cursor.move_to(line, col_start)
+            win.cursor.clamp(win.document._table)
+            host._dispatcher.engine.set_cursor(line, col_start)
         self._set_confirm_prompt(cs)
         host._invalidate("full")
 
     def _handle_confirm_sub_key(self, key: str) -> bool:
         from peovim.core.editor_state import ConfirmSubState
-        from peovim.modal.actions import MoveCursor
 
         host = self._host
         if host._editor_state is None:
@@ -331,22 +333,31 @@ class InputController:
         if not isinstance(cs, ConfirmSubState):
             return False
 
+        if not cs.initialized:
+            self._init_confirm_sub(cs)
+
         k = key.lower()
-        if k == "y":
-            self._apply_confirm_match(cs)
-            cs.current_idx += 1
-        elif k == "n":
-            cs.current_idx += 1
-        elif k == "a":
-            while not cs.done:
+        try:
+            if k == "y":
                 self._apply_confirm_match(cs)
                 cs.current_idx += 1
-        elif k in ("q", "<esc>", "<c-c>"):
-            self._finish_confirm_sub(cs)
-            return True
-        elif k == "l":
-            self._apply_confirm_match(cs)
-            cs.current_idx += 1
+            elif k == "n":
+                cs.current_idx += 1
+            elif k == "a":
+                while not cs.done:
+                    self._apply_confirm_match(cs)
+                    cs.current_idx += 1
+            elif k in ("q", "<esc>", "<c-c>"):
+                self._finish_confirm_sub(cs)
+                return True
+            elif k == "l":
+                self._apply_confirm_match(cs)
+                cs.current_idx += 1
+                self._finish_confirm_sub(cs)
+                return True
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("confirm_sub error")
             self._finish_confirm_sub(cs)
             return True
 
@@ -356,7 +367,10 @@ class InputController:
             cur = cs.current
             if cur is not None:
                 line, col_start, _col_end, _rep = cur
-                host._dispatcher.dispatch([MoveCursor(line, col_start)])
+                win = host._dispatcher.window
+                win.cursor.move_to(line, col_start)
+                win.cursor.clamp(win.document._table)
+                host._dispatcher.engine.set_cursor(line, col_start)
             self._set_confirm_prompt(cs)
             host._invalidate("full")
         return True
