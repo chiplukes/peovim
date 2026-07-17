@@ -184,9 +184,7 @@ class RegisterStore:  # cm:f3d2c6
                 return result.stdout if result.returncode == 0 else ""
 
             candidates: list[list[str]] = _build_linux_read_candidates()
-            candidates.append(
-                ["powershell.exe", "-NoLogo", "-Command", "[Console]::Out.Write((Get-Clipboard))"]
-            )
+            candidates.append(["powershell.exe", "-NoLogo", "-Command", "[Console]::Out.Write((Get-Clipboard))"])
 
             for cmd in candidates:
                 try:

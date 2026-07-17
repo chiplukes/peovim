@@ -357,6 +357,7 @@ class InputController:
                 return True
         except Exception:
             import logging
+
             logging.getLogger(__name__).exception("confirm_sub error")
             self._finish_confirm_sub(cs)
             return True

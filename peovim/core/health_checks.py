@@ -144,7 +144,7 @@ def check_optional_deps(api: Any, plugin_manager: Any, config_loader: Any) -> li
 
     # pygit2 — faster git queries
     try:
-        import pygit2  # type: ignore[import-not-found]
+        import pygit2  # type: ignore[import-not-found,import-untyped]
 
         items.append(HealthItem("ok", f"pygit2 {getattr(pygit2, '__version__', '?')} — fast git backend available"))
     except ImportError:
@@ -154,7 +154,7 @@ def check_optional_deps(api: Any, plugin_manager: Any, config_loader: Any) -> li
 
     # jedi — offline Python completion
     try:
-        import jedi  # type: ignore[import-not-found]
+        import jedi  # type: ignore[import-not-found,import-untyped]
 
         items.append(
             HealthItem("ok", f"jedi {getattr(jedi, '__version__', '?')} — offline Python completion available")
@@ -166,7 +166,7 @@ def check_optional_deps(api: Any, plugin_manager: Any, config_loader: Any) -> li
 
     # ed_crossterm — native crossterm backend
     try:
-        import ed_crossterm  # type: ignore[import-not-found]
+        import ed_crossterm  # type: ignore[import-not-found,import-untyped]
 
         ver = getattr(ed_crossterm, "__version__", "?")
         items.append(HealthItem("ok", f"ed_crossterm {ver} — native crossterm backend available"))

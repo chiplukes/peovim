@@ -73,11 +73,27 @@ def _resolve_variables(text: str, filepath: str | None) -> str:
     """Replace VSCode snippet variables in *text*."""
     now = datetime.datetime.now()
     month_names = (
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     )
     day_names = (
-        "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
     )
 
     def _repl(m: re.Match) -> str:
@@ -138,7 +154,7 @@ def _parse_tabstops(body_lines: list[str]) -> tuple[str, list[tuple[int, int, in
     for li, line in enumerate(body_lines):
         m = _CURSORPOS_RE.search(line)
         if m:
-            line = line[: m.start()] + line[m.end():]
+            line = line[: m.start()] + line[m.end() :]
             cursor_pos = (li, m.start())
 
         result = []
@@ -165,8 +181,8 @@ def _parse_tabstops(body_lines: list[str]) -> tuple[str, list[tuple[int, int, in
 # Loading
 # ---------------------------------------------------------------------------
 
-_LOAD_COMMENT_RE = re.compile(r'//[^\n]*|/\*.*?\*/', re.DOTALL)
-_LOAD_TRAILING_COMMA_RE = re.compile(r',\s*([}\]])')
+_LOAD_COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+_LOAD_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
 
 
 def _load_snippet_file(filepath: str) -> dict[str, dict]:
@@ -231,6 +247,7 @@ def _reload(api: EditorAPI) -> None:
 # Completion items
 # ---------------------------------------------------------------------------
 
+
 def _make_completion_items(
     snip_list: list[dict], filter_prefix: str = "", *, filepath: str | None = None, indent: str = ""
 ) -> list[dict]:
@@ -277,6 +294,7 @@ def _make_completion_items(
 # ---------------------------------------------------------------------------
 # Trigger logic
 # ---------------------------------------------------------------------------
+
 
 def _current_word_prefix(api: EditorAPI) -> tuple[int, str]:
     """Return (prefix_start_col, prefix_text) for the word at cursor."""
@@ -344,6 +362,7 @@ def _show_completions(api: EditorAPI, items: list[dict], prefix: str) -> None:
 # Public API (keymap callbacks)
 # ---------------------------------------------------------------------------
 
+
 def trigger(api: EditorAPI) -> None:
     """Open the completion popup with all snippets for the current filetype."""
     buf = api.active_buffer()
@@ -365,9 +384,10 @@ def trigger(api: EditorAPI) -> None:
 # Event handlers
 # ---------------------------------------------------------------------------
 
+
 def _on_text_changed(api: EditorAPI, **kw: object) -> None:
     """Auto-trigger: check if current word prefix matches any snippet."""
-    if not api.options.get("snippets_auto_trigger", True):
+    if not api.options.get("snippets_auto_trigger"):
         return
     if not _is_insert_mode(api):
         return
@@ -414,11 +434,14 @@ def _on_insert_left(api: EditorAPI, **kw: object) -> None:
 # Plugin lifecycle
 # ---------------------------------------------------------------------------
 
+
 def setup(api: EditorAPI) -> None:
     _reload(api)
 
     api.options.define("snippets_mappings", dict, {}, doc="Filetype → list of .json snippet file paths.")
-    api.options.define("snippets_auto_trigger", bool, True, doc="Auto-show snippet completions while typing in insert mode.")
+    api.options.define(
+        "snippets_auto_trigger", bool, True, doc="Auto-show snippet completions while typing in insert mode."
+    )
 
     api.events.on("buffer_text_changed", lambda **kw: _on_text_changed(api, **kw))
     api.events.on("insert_left", lambda **kw: _on_insert_left(api, **kw))
