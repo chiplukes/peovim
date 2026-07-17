@@ -103,8 +103,27 @@ def handle_buffer_action(dispatcher: ActionDispatcher, action: object, doc: Docu
         return True
 
     if isinstance(action, QuitEditor):
-        if not action.force and doc.dirty:
+        if action.force:
+            dispatcher.quit_requested = True
+        elif doc.dirty:
             dispatcher._set_message("E37: No write since last change (add ! to override)")
+        elif dispatcher._workspace is not None:
+            dirty_docs = [d for d in dispatcher._workspace.documents if d.dirty]
+            if dirty_docs:
+                first = dirty_docs[0]
+                dispatcher.window.document = first
+                dispatcher.window.scroll_line = 0
+                dispatcher.window.scroll_col = 0
+                dispatcher.window.cursor.move_to(0, 0)
+                name = first.path.name if first.path else "[No Name]"
+                remaining = len(dirty_docs)
+                dispatcher._set_message(
+                    f"E37: No write since last change for '{name}'"
+                    + (f" ({remaining - 1} more)" if remaining > 1 else "")
+                    + " (add ! to override)"
+                )
+            else:
+                dispatcher.quit_requested = True
         else:
             dispatcher.quit_requested = True
         return True
