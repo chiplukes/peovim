@@ -22,6 +22,7 @@ class EventLoopRuntimeController:  # cm:b1c5e8
         self._host = host
         self._last_autosave: float = 0.0
         self._last_file_check: float = 0.0
+        self._last_undo_flush: float = 0.0
         self._file_check_warned: set[int] = set()  # doc IDs warned for dirty+external-changed
         self._sidebar_blink_phase: int = -1
 
@@ -62,6 +63,7 @@ class EventLoopRuntimeController:  # cm:b1c5e8
         self.run_autosave(now)
         self.check_external_changes(now)
         self._tick_sidebar_blink(now)
+        self.run_undo_flush(now)
 
     def _tick_sidebar_blink(self, now: float) -> None:
         host = self._host
@@ -154,6 +156,25 @@ class EventLoopRuntimeController:  # cm:b1c5e8
                     recovery_store.write(doc.path, doc.get_text())
                 except Exception as exc:
                     log.exception("autosave failed for %s: %s", doc.path, exc)
+
+    def run_undo_flush(self, now: float) -> None:
+        _UNDO_FLUSH_INTERVAL = 5.0
+        options = getattr(self._host, "_options", None)
+        if options is None or not options.get("undofile"):
+            return
+        if now - self._last_undo_flush < _UNDO_FLUSH_INTERVAL:
+            return
+        self._last_undo_flush = now
+        self.flush_undo_documents()
+
+    def flush_undo_documents(self) -> None:
+        """Persist undo entries for all open documents that need flushing."""
+        host = self._host
+        for doc in host._workspace.documents:
+            try:
+                doc.flush_undo()
+            except Exception:
+                log.exception("flush_undo failed for %s", getattr(doc, "path", None))
 
     def update_key_echo_timeout(self, now: float) -> None:
         host = self._host

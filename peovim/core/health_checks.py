@@ -586,7 +586,7 @@ def check_lsp(api: Any, plugin_manager: Any, config_loader: Any) -> list[HealthI
 
 
 # ---------------------------------------------------------------------------
-# 9. System clipboard
+# 10. System clipboard
 # ---------------------------------------------------------------------------
 
 
@@ -723,6 +723,49 @@ def check_clipboard(api: Any, plugin_manager: Any, config_loader: Any) -> list[H
                 detail="y/yank does NOT sync to system clipboard by default — use '+y or set clipboard=unnamedplus",
             )
         )
+
+    return items
+
+
+# ---------------------------------------------------------------------------
+# 11. Persistent undo
+# ---------------------------------------------------------------------------
+
+
+def check_undo(api: Any, plugin_manager: Any, config_loader: Any) -> list[HealthItem]:
+    items: list[HealthItem] = []
+
+    undofile = False
+    if api is not None:
+        editor_state = getattr(api, "_editor_state", None)
+        if editor_state is not None:
+            undofile = bool(editor_state.options.get("undofile"))
+
+    if undofile:
+        items.append(
+            HealthItem("ok", "undofile enabled", detail="Undo history persists across buffer close and editor restart")
+        )
+    else:
+        items.append(
+            HealthItem(
+                "info",
+                "undofile disabled",
+                detail="Set undofile=true to persist undo history across sessions",
+            )
+        )
+
+    try:
+        from peovim.core.persistence_undo import undo_directory_size
+
+        count, total_bytes = undo_directory_size()
+        if count > 0:
+            kb = total_bytes / 1024
+            size_str = f"{kb:.1f} KB" if kb < 1024 else f"{kb / 1024:.1f} MB"
+            items.append(HealthItem("info", f"{count} undo file(s) ({size_str})"))
+        else:
+            items.append(HealthItem("info", "No undo files on disk"))
+    except Exception as exc:
+        items.append(HealthItem("warn", f"Could not inspect undo directory: {exc}"))
 
     return items
 

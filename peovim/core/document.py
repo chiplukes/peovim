@@ -10,6 +10,7 @@ See notes/plan_piece_table.md §CRLF Policy and §Encoding Policy.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
@@ -19,7 +20,10 @@ from charset_normalizer import from_bytes
 from peovim.core.buffer import PieceTable
 from peovim.core.history import UndoStack
 from peovim.core.persistence import atomic_write_bytes
+from peovim.core.persistence_undo import read_undo_file, write_undo_file
 from peovim.core.snapshot import BufferSnapshot
+
+_log = logging.getLogger(__name__)
 
 _EOL_TO_FILEFORMAT = {"\n": "unix", "\r\n": "dos", "\r": "mac"}
 _FILEFORMAT_TO_EOL = {value: key for key, value in _EOL_TO_FILEFORMAT.items()}
@@ -97,6 +101,7 @@ class Document:  # cm:d5f3b8
         self._changed_handlers: list[Callable[[Document], None]] = []
         self._change_counter: int = 0  # +1 on edit, -1 on undo, +1 on redo
         self._clean_counter: int = 0  # _change_counter value at last save/load
+        self._undo_flush_needed: bool = False
 
     @property
     def dirty(self) -> bool:
@@ -117,6 +122,8 @@ class Document:  # cm:d5f3b8
 
             self.filetype = detect_filetype(str(path))
         self._loaded_file_state = _stat_fingerprint(path)
+        self._undo_flush_needed = False
+        self._restore_undo()
 
     def load_bytes(self, raw: bytes) -> None:
         """Load from raw bytes. Detects encoding and CRLF."""
@@ -146,6 +153,7 @@ class Document:  # cm:d5f3b8
         self._undo = UndoStack()
         self._change_counter = 0
         self._clean_counter = 0
+        self._undo_flush_needed = False
         # Detect filetype from shebang (extension detection done in load())
         from peovim.core.filetype import detect_filetype
 
@@ -163,6 +171,7 @@ class Document:  # cm:d5f3b8
         self._undo = UndoStack()
         self._change_counter = 0
         self._clean_counter = 0
+        self._undo_flush_needed = False
         from peovim.core.filetype import detect_filetype
 
         first_line = normalized.split("\n", 1)[0]
@@ -209,6 +218,7 @@ class Document:  # cm:d5f3b8
         self.path = target
         self._loaded_file_state = _stat_fingerprint(target)
         self._clean_counter = self._change_counter
+        self.flush_undo()
         return warning
 
     def save_as(self, path: Path) -> None:
@@ -290,6 +300,7 @@ class Document:  # cm:d5f3b8
         edit = self._table.insert(pos, text.encode("utf-8"))
         self._undo.push(edit)
         self._change_counter += 1
+        self._undo_flush_needed = True
         self._notify_changed()
 
     def delete(self, start_line: int, start_col: int, end_line: int, end_col: int) -> None:
@@ -301,6 +312,7 @@ class Document:  # cm:d5f3b8
         edit = self._table.delete(start_pos, end_pos - start_pos)
         self._undo.push(edit)
         self._change_counter += 1
+        self._undo_flush_needed = True
         self._notify_changed()
 
     def replace(self, start_line: int, start_col: int, end_line: int, end_col: int, text: str) -> None:
@@ -316,6 +328,7 @@ class Document:  # cm:d5f3b8
                 edit = self._table.insert(start_pos, text.encode("utf-8"))
                 self._undo.push(edit)
         self._change_counter += 1
+        self._undo_flush_needed = True
         self._notify_changed()
 
     # ------------------------------------------------------------------
@@ -331,6 +344,7 @@ class Document:  # cm:d5f3b8
         result = self._undo.undo(self._table)
         if result is not None:
             self._change_counter -= 1
+            self._undo_flush_needed = True
             self._notify_changed()
             return self._change_site(result[0].pos)
         return None
@@ -344,6 +358,7 @@ class Document:  # cm:d5f3b8
         result = self._undo.redo(self._table)
         if result is not None:
             self._change_counter += 1
+            self._undo_flush_needed = True
             self._notify_changed()
             return self._change_site(result[0].pos)
         return None
@@ -370,6 +385,47 @@ class Document:  # cm:d5f3b8
     def end_compound(self) -> None:
         """Close a compound edit group opened with begin_compound()."""
         self._undo.end_compound()
+
+    # ------------------------------------------------------------------
+    # Persistent undo
+    # ------------------------------------------------------------------
+
+    def flush_undo(self) -> None:
+        """Persist undo entries to disk if the undo stack has changed since last flush."""
+        if not self.path or not self._undo_flush_needed:
+            return
+        stack, redo = self._undo.get_entries()
+        dirty_count = self._change_counter - self._clean_counter
+        try:
+            write_undo_file(self.path, stack, redo, dirty_count)
+            self._undo_flush_needed = False
+        except Exception:
+            _log.exception("undo flush failed for %s", self.path)
+
+    def _restore_undo(self) -> None:
+        """Restore undo history from disk after loading a file.
+
+        Replays unsaved (dirty) edits forward to reconstruct the document state,
+        then loads all entries into the undo stack.
+        """
+        if self.path is None:
+            return
+        result = read_undo_file(self.path)
+        if result is None:
+            return
+        stack_entries, redo_entries, dirty_count = result
+        if dirty_count > 0 and dirty_count <= len(stack_entries):
+            entries_to_replay = stack_entries[-dirty_count:]
+            for group in entries_to_replay:
+                for edit in group:
+                    if edit.kind == "insert":
+                        self._table.insert(edit.pos, edit.text)
+                    else:
+                        self._table.delete(edit.pos, len(edit.text))
+        self._undo.restore_from_entries(stack_entries, redo_entries)
+        self._change_counter = dirty_count
+        self._clean_counter = 0
+        self._undo_flush_needed = False
 
     # ------------------------------------------------------------------
     # Events

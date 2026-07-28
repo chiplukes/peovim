@@ -279,6 +279,7 @@ class EventLoop:  # cm:e4d6b5
                     loop.remove_signal_handler(signal.SIGWINCH)
             loop.set_exception_handler(previous_exception_handler)
             if self._editor_state is not None:
+                self._runtime.flush_undo_documents()
                 self._editor_state.event_bus.emit("editor_shutdown")
             self._cleanup_recovery_on_exit()
             # Give shutdown handlers one loop turn so cancelled background tasks

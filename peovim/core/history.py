@@ -118,3 +118,22 @@ class UndoStack:  # cm:3a6e9c
             table.insert(edit.pos, edit.text)
         else:
             table.delete(edit.pos, len(edit.text))
+
+    # ------------------------------------------------------------------
+    # Serialization (for persistent undo)
+    # ------------------------------------------------------------------
+
+    def get_entries(self) -> tuple[list[list[Edit]], list[list[Edit]]]:
+        """Return (stack_entries, redo_entries) as plain lists for serialization."""
+        return list(self._stack), list(self._redo)
+
+    def restore_from_entries(self, stack_entries: list[list[Edit]], redo_entries: list[list[Edit]]) -> None:
+        """Restore undo stack from persisted entries (no replay — caller handles that)."""
+        self._open = None
+        self._compound_depth = 0
+        self._stack.clear()
+        self._redo.clear()
+        for group in stack_entries:
+            self._stack.append(group)
+        for group in redo_entries:
+            self._redo.append(group)

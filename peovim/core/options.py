@@ -90,6 +90,8 @@ _OPTION_DEFS: list[OptionDef] = [
     OptionDef("trim_trailing_whitespace", bool, False, ("global", "window", "buffer")),
     # --- autosave / recovery ---
     OptionDef("autosave_interval", int, 30, ("global",), lambda v: v >= 0),
+    # --- undo persistence ---
+    OptionDef("undofile", bool, False, ("global",)),
 ]
 
 _DEFS_BY_NAME: dict[str, OptionDef] = {d.name: d for d in _OPTION_DEFS}

@@ -83,6 +83,9 @@ plugins.load("peovim.plugins.lsp")
 
 options.set("leader", " ")
 keymap.nmap("<leader>w", ":w<CR>", desc="Save file")
+
+# Enable persistent undo (off by default)
+options.set("undofile", True)
 ```
 
 Built-in plugins are not loaded automatically — your `init.py` opts in to each one.
@@ -270,6 +273,7 @@ The editor persists across runs:
 - numbered registers
 - jump list
 - last cursor positions per file
+- undo history (when `undofile` is enabled)
 - named sessions
 
 Practical guidance:

@@ -544,6 +544,7 @@ several cases (e.g. `expandtab`, `tabstop`, `autoindent`, `hlsearch`, `scrolloff
 |---|---|---|---|
 | `clipboard` / `cb` | string | | ✓ (`unnamed`/`unnamedplus`) |
 | `mouse` | string | | ~ |
+| `undofile` / `udf` | bool | false | ✓ |
 | `undolevels` / `ul` | int | 1000 | ~ |
 
 ---

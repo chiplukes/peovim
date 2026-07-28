@@ -1055,6 +1055,44 @@ Edits are grouped into **transactions** (undo units):
 The transaction boundary on mode change means `u` in Normal mode always
 undoes the entire last Insert session, matching Vim's behavior exactly.
 
+### Undo Persistence (undofile)
+
+When `undofile` is enabled (`options.set("undofile", True)`), undo entries are
+persisted to disk so edit history survives buffer close and editor restart.
+
+**Storage:**
+```
+~/.local/share/peovim/undo/  (or platformdirs.user_data_dir/peovim/undo/)
+  <sha256_of_abspath>.undo   — msgpack binary
+```
+
+Each undo file records:
+- `file_hash` — SHA256 of the file content at persist time (validates that the
+  file hasn't changed externally; stale undo is discarded)
+- `stack` / `redo` — serialized edit groups from `UndoStack`
+- `dirty_count` — number of unsaved entries at the end of the stack
+
+**Lifecycle:**
+- On `Document.load()`: reads undo file, validates hash. If matched, replays
+  dirty entries forward to reconstruct unsaved document state, then loads all
+  entries into the undo stack. If hash mismatched, discards as stale.
+- On every edit: sets `_undo_flush_needed = True` on the Document.
+- Periodic (5s): `EventLoopRuntimeController.run_undo_flush()` writes dirty undo
+  stores to disk (gated by the `undofile` option).
+- On `:w` save: immediate flush via `Document.save()`.
+- On editor exit: `flush_undo_documents()` writes all dirty undo stores.
+
+**Modules involved:**
+- `peovim/core/persistence_undo.py` — msgpack read/write/delete, hash validation
+- `peovim/core/history.py` — `UndoStack.get_entries()` / `restore_from_entries()`
+- `peovim/core/document.py` — `flush_undo()`, `_restore_undo()`, dirty tracking
+- `peovim/ui/runtime_controller.py` — periodic tick + shutdown flush
+
+**Validation on reload:** The stored `file_hash` is compared against a fresh
+SHA256 of the file on disk. If they match, the undo is valid. If the file was
+modified externally (e.g., `git checkout`), the undo file is discarded and a
+debug log entry is emitted.
+
 ---
 
 ## Split Tree

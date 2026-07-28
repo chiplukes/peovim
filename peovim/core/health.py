@@ -173,6 +173,7 @@ def build_registry() -> HealthRegistry:
         check_render_runtime,
         check_syntax,
         check_terminal,
+        check_undo,
     )
 
     reg = HealthRegistry()
@@ -189,4 +190,5 @@ def build_registry() -> HealthRegistry:
     reg.register("plugins", check_plugins, label="Plugins")
     reg.register("lsp", check_lsp, label="Language Server Protocol")
     reg.register("clipboard", check_clipboard, label="System Clipboard")
+    reg.register("undo", check_undo, label="Persistent Undo")
     return reg

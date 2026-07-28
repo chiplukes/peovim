@@ -198,6 +198,7 @@ What each logger emits and at what level. Use these names with `--log-modules` o
 |--------|-------|----------------|
 | `peovim.core.options` | DEBUG | Every option set — name, value, scope, win_id/buf_id |
 | `peovim.core.event_bus` | DEBUG | Every event emission — name, handler count, kwargs (**high-frequency**: `cursor_moved`, `buffer_changed`, `buffer_text_changed` fire on every edit/movement) |
+| `peovim.core.persistence_undo` | DEBUG | Undo file read/write — paths, hash validation, stale discard, entry counts, I/O errors |
 
 ### UI and panels
 
@@ -363,4 +364,7 @@ handles it. Document the new module in the table above.
 
 # All events including high-frequency ones (very noisy)
 :LogOn modules=peovim.core.event_bus
+
+# Debug undo persistence
+:LogOn modules=peovim.core.persistence_undo
 ```

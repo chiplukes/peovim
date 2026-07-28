@@ -72,6 +72,7 @@ All persisted stores use atomic replace (temp-file + `os.replace()`).
 | Store | Location | Policy |
 |---|---|---|
 | `shada` | user data dir | atomic replace, last-writer-wins |
+| per-file undo | user data dir/undo/ | atomic replace, per-file, hash-validated |
 | sessions | user data dir | atomic replace, last-writer-wins per session name |
 | plugin stores | user data dir | atomic replace, last-writer-wins per store name |
 | file saves | on disk | atomic replace + save-time external-change detection |

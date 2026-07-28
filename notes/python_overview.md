@@ -45,6 +45,7 @@ All modules here are headlessly testable. Nothing in `core/` imports from `ui/`.
 | `diffing.py` | `parse_hunks(diff_text)` — unified diff parser for gutter sign placement; shared by gitsigns and svnsigns |
 | `persistence.py` | Shared atomic file write helpers used by document/session/store saves |
 | `persistence_policy.py` | Shared inventory of persistence surfaces and multi-instance policy classifications |
+| `persistence_undo.py` | Per-file persistent undo storage (msgpack); survives buffer close and editor restart |
 | `options.py` | `OptionsStore` — global/window/buffer option scopes; typed options with validators |
 | `jumplist.py` | `JumpList` — `(path, line, col)` entries; `push`/`back`/`forward`; max_depth=100 |
 | `search.py` | `compile_pattern`, `search_next`, `search_all_in_line` — regex search helpers |
