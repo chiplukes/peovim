@@ -586,6 +586,148 @@ def check_lsp(api: Any, plugin_manager: Any, config_loader: Any) -> list[HealthI
 
 
 # ---------------------------------------------------------------------------
+# 9. System clipboard
+# ---------------------------------------------------------------------------
+
+
+def check_clipboard(api: Any, plugin_manager: Any, config_loader: Any) -> list[HealthItem]:
+    items: list[HealthItem] = []
+
+    if sys.platform == "win32":
+        items.append(HealthItem("ok", "Windows clipboard (ctypes WinAPI) available"))
+        return items
+
+    if sys.platform == "darwin":
+        pbcopy = shutil.which("pbcopy")
+        pbpaste = shutil.which("pbpaste")
+        if pbcopy and pbpaste:
+            items.append(HealthItem("ok", f"pbcopy: {pbcopy}", detail=f"pbpaste: {pbpaste}"))
+        else:
+            items.append(
+                HealthItem(
+                    "error",
+                    "macOS clipboard tools missing",
+                    detail="pbcopy/pbpaste are system tools and should always be present",
+                )
+            )
+        return items
+
+    # Linux / WSL
+    clipboard_option = ""
+    if api is not None:
+        editor_state = getattr(api, "_editor_state", None)
+        if editor_state is not None:
+            clipboard_option = editor_state.options.get("clipboard") or ""
+
+    wl_copy = shutil.which("wl-copy")
+    wl_paste = shutil.which("wl-paste")
+    xclip = shutil.which("xclip")
+    xsel = shutil.which("xsel")
+    powershell = shutil.which("powershell.exe")
+    clip_exe = shutil.which("clip.exe")
+
+    wayland = os.environ.get("WAYLAND_DISPLAY")
+    x11 = os.environ.get("DISPLAY")
+
+    found_any = wl_copy or xclip or xsel or powershell or clip_exe
+
+    if found_any:
+        items.append(HealthItem("ok", "Clipboard tools detected:"))
+    else:
+        items.append(
+            HealthItem(
+                "error",
+                "No clipboard tools found",
+                detail=(
+                    "Install one of:\n"
+                    "  sudo apt install wl-clipboard  (Wayland)\n"
+                    "  sudo apt install xclip          (X11)\n"
+                    "  sudo apt install xsel           (X11 alternative)"
+                ),
+            )
+        )
+
+    if wl_copy:
+        if wayland:
+            items.append(HealthItem("ok", f"wl-copy: {wl_copy}", detail=f"wl-paste: {wl_paste or 'not found'}"))
+        else:
+            items.append(
+                HealthItem(
+                    "info",
+                    f"wl-copy: {wl_copy}",
+                    detail="wl-clipboard found but WAYLAND_DISPLAY not set — will try as fallback",
+                )
+            )
+
+    if wl_copy is None and wayland:
+        items.append(
+            HealthItem(
+                "warn",
+                "Wayland detected but wl-copy not found",
+                detail="WAYLAND_DISPLAY is set but wl-clipboard is not installed. Install: sudo apt install wl-clipboard",
+            )
+        )
+
+    if xclip:
+        if x11:
+            items.append(HealthItem("ok", f"xclip: {xclip}"))
+        else:
+            items.append(
+                HealthItem(
+                    "info",
+                    f"xclip: {xclip}",
+                    detail="xclip found but DISPLAY not set — will try as fallback",
+                )
+            )
+
+    if xsel:
+        if x11:
+            items.append(HealthItem("ok", f"xsel: {xsel}"))
+        else:
+            items.append(
+                HealthItem(
+                    "info",
+                    f"xsel: {xsel}",
+                    detail="xsel found but DISPLAY not set — will try as fallback",
+                )
+            )
+
+    if xclip is None and xsel is None and x11:
+        items.append(
+            HealthItem(
+                "warn",
+                "X11 detected but neither xclip nor xsel found",
+                detail="Install: sudo apt install xclip   or   sudo apt install xsel",
+            )
+        )
+
+    if powershell:
+        items.append(
+            HealthItem("info", f"WSL powershell.exe: {powershell}", detail="Used as fallback for WSL clipboard")
+        )
+    if clip_exe:
+        items.append(HealthItem("info", f"WSL clip.exe: {clip_exe}", detail="Used as fallback for WSL clipboard write"))
+
+    env_display = f"WAYLAND_DISPLAY={'set' if wayland else 'not set'}, DISPLAY={'set' if x11 else 'not set'}"
+    items.append(HealthItem("info", f"Display env: {env_display}"))
+
+    if clipboard_option:
+        items.append(
+            HealthItem("ok", f"clipboard option: {clipboard_option!r}", detail="Yank will sync to system clipboard")
+        )
+    else:
+        items.append(
+            HealthItem(
+                "info",
+                "clipboard option: unset",
+                detail="y/yank does NOT sync to system clipboard by default — use '+y or set clipboard=unnamedplus",
+            )
+        )
+
+    return items
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

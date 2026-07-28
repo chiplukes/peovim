@@ -160,6 +160,7 @@ def highlight_report(text: str) -> list[HighlightSpan]:
 def build_registry() -> HealthRegistry:
     """Build and return a HealthRegistry pre-loaded with built-in checkers."""
     from peovim.core.health_checks import (
+        check_clipboard,
         check_config,
         check_data_dirs,
         check_editor_version,
@@ -187,4 +188,5 @@ def build_registry() -> HealthRegistry:
     reg.register("config", check_config, label="User Configuration")
     reg.register("plugins", check_plugins, label="Plugins")
     reg.register("lsp", check_lsp, label="Language Server Protocol")
+    reg.register("clipboard", check_clipboard, label="System Clipboard")
     return reg

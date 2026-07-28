@@ -12,8 +12,11 @@ See notes/architecture.md for the component design overview.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from typing import Literal
+
+log = logging.getLogger(__name__)
 
 # Register content type
 RegKind = Literal["char", "line", "block"]
@@ -23,15 +26,6 @@ _READ_ONLY = frozenset({".", "%"})
 
 # Special writable registers
 _SPECIAL_WRITABLE = frozenset({'"', "/", ":", "*", "+", "=", "#", "-"})
-
-
-def _is_wsl() -> bool:
-    """Return True when running under Windows Subsystem for Linux."""
-    try:
-        with open("/proc/version", encoding="utf-8") as f:
-            return "microsoft" in f.read().lower()
-    except OSError:
-        return False
 
 
 def _build_linux_read_candidates() -> list[list[str]]:
@@ -92,8 +86,6 @@ class RegisterStore:  # cm:f3d2c6
     def __init__(self) -> None:
         # (text, kind) per register name (lowercase)
         self._store: dict[str, tuple[str, RegKind]] = {}
-        # Clipboard access disabled by default; set by environment at startup
-        self._clipboard_enabled: bool = False
         # Timestamp (monotonic) of last write to each clipboard register.
         self._clipboard_write_time: dict[str, float] = {}
 
@@ -181,7 +173,10 @@ class RegisterStore:  # cm:f3d2c6
 
             if sys.platform == "darwin":
                 result = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=2)
-                return result.stdout if result.returncode == 0 else ""
+                if result.returncode == 0:
+                    return result.stdout
+                log.debug("Clipboard read pbpaste failed (rc=%d): %s", result.returncode, result.stderr)
+                return ""
 
             candidates: list[list[str]] = _build_linux_read_candidates()
             candidates.append(["powershell.exe", "-NoLogo", "-Command", "[Console]::Out.Write((Get-Clipboard))"])
@@ -190,11 +185,21 @@ class RegisterStore:  # cm:f3d2c6
                 try:
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
                     if result.returncode == 0:
+                        log.debug("Clipboard read succeeded: %s", " ".join(cmd))
                         return result.stdout
+                    log.debug(
+                        "Clipboard read %s failed (rc=%d): %s",
+                        " ".join(cmd),
+                        result.returncode,
+                        result.stderr.strip(),
+                    )
                 except FileNotFoundError:
+                    log.debug("Clipboard read tool not found: %s", " ".join(cmd))
                     continue
+            log.debug("Clipboard read: no usable tool found (tried %d candidates)", len(candidates))
             return ""
-        except Exception:
+        except Exception as exc:
+            log.debug("Clipboard read exception: %s", exc)
             return ""
 
     def _write_clipboard(self, text: str) -> bool:
@@ -207,7 +212,10 @@ class RegisterStore:  # cm:f3d2c6
 
             if sys.platform == "darwin":
                 result = subprocess.run(["pbcopy"], input=text.encode(), timeout=2, check=False)
-                return result.returncode == 0
+                if result.returncode == 0:
+                    return True
+                log.debug("Clipboard write pbcopy failed (rc=%d): %s", result.returncode, result.stderr)
+                return False
 
             candidates: list[list[str]] = _build_linux_write_candidates()
             candidates.append(["clip.exe"])
@@ -216,11 +224,21 @@ class RegisterStore:  # cm:f3d2c6
                 try:
                     result = subprocess.run(cmd, input=text.encode(), timeout=2, check=False)
                     if result.returncode == 0:
+                        log.debug("Clipboard write succeeded: %s", " ".join(cmd))
                         return True
+                    log.debug(
+                        "Clipboard write %s failed (rc=%d): %s",
+                        " ".join(cmd),
+                        result.returncode,
+                        result.stderr.strip(),
+                    )
                 except FileNotFoundError:
+                    log.debug("Clipboard write tool not found: %s", " ".join(cmd))
                     continue
+            log.debug("Clipboard write: no usable tool found (tried %d candidates)", len(candidates))
             return False
-        except Exception:
+        except Exception as exc:
+            log.debug("Clipboard write exception: %s", exc)
             return False
 
     def _read_clipboard_win32(self) -> str:
