@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -382,6 +383,76 @@ class _LocalHistoryController:
 
 _controller: _LocalHistoryController | None = None
 _PANEL_NAME = "local-history"
+
+
+def autosnapshot_tick(api: Any, options: Any) -> None:
+    """Called periodically by the runtime controller to snapshot dirty files.
+
+    Gated by the `autosnapshot` option. Snaps open dirty buffers and,
+    if autosnapshot_scope is "all", also git-status dirty files.
+    """
+    global _controller
+    if _controller is None:
+        return
+    store = _controller._store
+    _snapshot_open_dirty_buffers(api, store)
+    scope = options.get("autosnapshot_scope") or "open"
+    if scope == "all":
+        _snapshot_git_dirty_files(api, store)
+
+
+def _snapshot_open_dirty_buffers(api: Any, store: _LocalHistoryStore) -> None:
+    """Capture snapshots for all open dirty file-backed buffers."""
+    for buf in api.list_buffers():
+        path = getattr(buf, "path", None)
+        if path is None:
+            continue
+        if not getattr(buf, "dirty", False):
+            continue
+        with contextlib.suppress(Exception):
+            store.capture(path, buf.get_text(), reason="autosnapshot")
+
+
+def _snapshot_git_dirty_files(api: Any, store: _LocalHistoryStore) -> None:
+    """Capture snapshots for git-status dirty tracked files on disk.
+
+    Only captures files with worktree modifications (M). Skips untracked
+    (??) and ignored (!!) files.
+    """
+    root = api.find_root()
+    if root is None:
+        return
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=str(root),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return
+    if result.returncode != 0:
+        return
+
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        status = stripped[:2]
+        filepath_str = stripped[3:].strip()
+        if status == "??" or status == "!!":
+            continue
+        if status[0] not in " M" or status[1] not in " M":
+            continue
+        filepath = root / filepath_str
+        if not filepath.exists():
+            continue
+        try:
+            content = filepath.read_text(encoding="utf-8", errors="replace")
+            store.capture(filepath, content, reason="git-autosnapshot")
+        except Exception:
+            continue
 
 
 class _LocalHistoryPanel:

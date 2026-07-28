@@ -367,4 +367,7 @@ handles it. Document the new module in the table above.
 
 # Debug undo persistence
 :LogOn modules=peovim.core.persistence_undo
+
+# Debug file snapshots
+:LogOn modules=peovim.plugins.local_history,peovim.ui.runtime_controller
 ```

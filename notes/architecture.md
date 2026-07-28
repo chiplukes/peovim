@@ -1093,6 +1093,35 @@ SHA256 of the file on disk. If they match, the undo is valid. If the file was
 modified externally (e.g., `git checkout`), the undo file is discarded and a
 debug log entry is emitted.
 
+### File History (autosnapshot)
+
+When `autosnapshot` is enabled, the existing `local_history` plugin periodically
+snapshots dirty file content to the history store so that file states survive
+external modifications (AI tools, `git checkout`, other editors).
+
+**Options:** `autosnapshot` (bool), `autosnapshot_interval` (int, default 60s),
+`autosnapshot_scope` (`"open"` or `"all"`).
+
+**Mechanism:**
+The `EventLoopRuntimeController.run_autosnapshot()` tick fires every render frame
+(gated by the interval). It calls `autosnapshot_tick()` in the local_history
+plugin, which:
+
+1. **Open dirty buffers:** Iterates all open buffers via `api.list_buffers()`,
+   captures each dirty buffer's full text via the existing
+   `_LocalHistoryStore.capture()` (SHA1 deduplication against latest entry).
+2. **Git-dirty files (scope=`all`):** Runs `git status --porcelain` at the
+   project root, reads each file with worktree modifications (` M`/`MM`), and
+   captures a snapshot from disk. Skips untracked (`??`) and ignored (`!!`) files.
+
+All captures use `_LocalHistoryStore.capture()` which is already idempotent:
+identical content hashes are skipped, so no duplicate snapshots accumulate.
+
+**Modules involved:**
+- `peovim/plugins/local_history.py` — `autosnapshot_tick()`, helper functions
+- `peovim/ui/runtime_controller.py` — `run_autosnapshot()` tick + interval gating
+- Existing `_LocalHistoryStore` — provides `capture()` with content-hash dedup
+
 ---
 
 ## Split Tree

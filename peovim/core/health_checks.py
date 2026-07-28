@@ -771,6 +771,62 @@ def check_undo(api: Any, plugin_manager: Any, config_loader: Any) -> list[Health
 
 
 # ---------------------------------------------------------------------------
+# 12. Auto-snapshot
+# ---------------------------------------------------------------------------
+
+
+def check_autosnapshot(api: Any, plugin_manager: Any, config_loader: Any) -> list[HealthItem]:
+    items: list[HealthItem] = []
+
+    autosnapshot = False
+    interval = 60
+    scope = "open"
+    if api is not None:
+        editor_state = getattr(api, "_editor_state", None)
+        if editor_state is not None:
+            autosnapshot = bool(editor_state.options.get("autosnapshot"))
+            interval = editor_state.options.get("autosnapshot_interval") or 60
+            scope = editor_state.options.get("autosnapshot_scope") or "open"
+
+    if autosnapshot:
+        items.append(
+            HealthItem(
+                "ok",
+                f"autosnapshot enabled (interval={interval}s, scope={scope!r})",
+                detail="Open dirty buffers (and git-dirty files if scope=all) are snapshotted periodically",
+            )
+        )
+    else:
+        items.append(
+            HealthItem(
+                "info",
+                "autosnapshot disabled",
+                detail="Set autosnapshot=true to periodically snapshot dirty file versions",
+            )
+        )
+
+    try:
+        from peovim.plugins.local_history import _controller
+
+        if _controller is not None:
+            store = _controller._store
+            root = store.root()
+            if root.exists():
+                total_files = sum(1 for _ in root.rglob("manifest.json"))
+                items.append(HealthItem("info", f"local_history store: {total_files} file(s) with snapshots"))
+            else:
+                items.append(HealthItem("info", "local_history store: not yet created"))
+        else:
+            items.append(HealthItem("info", "local_history plugin not loaded"))
+    except ImportError:
+        items.append(HealthItem("info", "local_history plugin not available"))
+    except Exception as exc:
+        items.append(HealthItem("warn", f"Could not inspect local_history store: {exc}"))
+
+    return items
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

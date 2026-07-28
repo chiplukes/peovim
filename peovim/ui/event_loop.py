@@ -301,6 +301,7 @@ class EventLoop:  # cm:e4d6b5
         self._runtime.report_runtime_error(where, exc, detail=detail)
 
     def _handle_key_event(self, event: KeyEvent) -> bool:
+        self._runtime.note_user_input()
         if event.key == "<BracketedPaste>":
             return self._input_controller.handle_paste_event(event.text)
         return self._input_controller.handle_key_event(event)

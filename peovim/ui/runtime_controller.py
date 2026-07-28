@@ -23,6 +23,8 @@ class EventLoopRuntimeController:  # cm:b1c5e8
         self._last_autosave: float = 0.0
         self._last_file_check: float = 0.0
         self._last_undo_flush: float = 0.0
+        self._last_autosnapshot: float = 0.0
+        self._last_user_input: float = 0.0
         self._file_check_warned: set[int] = set()  # doc IDs warned for dirty+external-changed
         self._sidebar_blink_phase: int = -1
 
@@ -64,6 +66,7 @@ class EventLoopRuntimeController:  # cm:b1c5e8
         self.check_external_changes(now)
         self._tick_sidebar_blink(now)
         self.run_undo_flush(now)
+        self.run_autosnapshot(now)
 
     def _tick_sidebar_blink(self, now: float) -> None:
         host = self._host
@@ -175,6 +178,37 @@ class EventLoopRuntimeController:  # cm:b1c5e8
                 doc.flush_undo()
             except Exception:
                 log.exception("flush_undo failed for %s", getattr(doc, "path", None))
+
+    def note_user_input(self) -> None:
+        import time
+
+        self._last_user_input = time.monotonic()
+
+    def run_autosnapshot(self, now: float) -> None:
+        options = getattr(self._host, "_options", None)
+        if options is None or not options.get("autosnapshot"):
+            return
+        interval: int = options.get("autosnapshot_interval") or 60
+        if interval <= 0:
+            return
+        if now - self._last_autosnapshot < interval:
+            return
+        # Defer until the user has been idle for at least 5 s to avoid
+        # stutter from I/O (git status, file reads, atomic writes) during
+        # active typing or scrolling.
+        _IDLE_THRESHOLD = 5.0
+        if now - self._last_user_input < _IDLE_THRESHOLD:
+            return
+        self._last_autosnapshot = now
+
+        try:
+            from peovim.plugins.local_history import autosnapshot_tick
+
+            api = getattr(self._host, "_api", None)
+            if api is not None:
+                autosnapshot_tick(api, options)
+        except Exception:
+            log.exception("autosnapshot tick failed")
 
     def update_key_echo_timeout(self, now: float) -> None:
         host = self._host

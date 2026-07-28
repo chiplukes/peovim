@@ -92,6 +92,10 @@ _OPTION_DEFS: list[OptionDef] = [
     OptionDef("autosave_interval", int, 30, ("global",), lambda v: v >= 0),
     # --- undo persistence ---
     OptionDef("undofile", bool, False, ("global",)),
+    # --- auto-snapshot ---
+    OptionDef("autosnapshot", bool, False, ("global",)),
+    OptionDef("autosnapshot_interval", int, 60, ("global",), lambda v: v >= 10),
+    OptionDef("autosnapshot_scope", str, "open", ("global",), lambda v: v in ("open", "all")),
 ]
 
 _DEFS_BY_NAME: dict[str, OptionDef] = {d.name: d for d in _OPTION_DEFS}

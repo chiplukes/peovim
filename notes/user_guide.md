@@ -86,6 +86,11 @@ keymap.nmap("<leader>w", ":w<CR>", desc="Save file")
 
 # Enable persistent undo (off by default)
 options.set("undofile", True)
+
+# Enable auto-snapshot (off by default)
+options.set("autosnapshot", True)
+options.set("autosnapshot_interval", 60)       # seconds between snapshots
+options.set("autosnapshot_scope", "all")        # "open" or "all" (git-dirty files too)
 ```
 
 Built-in plugins are not loaded automatically — your `init.py` opts in to each one.
@@ -274,6 +279,7 @@ The editor persists across runs:
 - jump list
 - last cursor positions per file
 - undo history (when `undofile` is enabled)
+- file version history (when `autosnapshot` is enabled)
 - named sessions
 
 Practical guidance:
