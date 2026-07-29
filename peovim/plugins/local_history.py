@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import logging
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from peovim.core.persistence import atomic_write_text
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from peovim.api.editor import EditorAPI
@@ -385,7 +388,12 @@ _controller: _LocalHistoryController | None = None
 _PANEL_NAME = "local-history"
 
 
-def autosnapshot_tick(api: Any, options: Any) -> None:
+def autosnapshot_tick(
+    *,
+    documents: list[Any],
+    project_root: Path | None,
+    options: Any,
+) -> None:
     """Called periodically by the runtime controller to snapshot dirty files.
 
     Gated by the `autosnapshot` option. Snaps open dirty buffers and,
@@ -393,34 +401,40 @@ def autosnapshot_tick(api: Any, options: Any) -> None:
     """
     global _controller
     if _controller is None:
+        _log.debug("autosnapshot tick skipped: local_history plugin not loaded")
         return
     store = _controller._store
-    _snapshot_open_dirty_buffers(api, store)
+    _log.debug("autosnapshot tick: capturing %d open documents", len(documents))
+    _snapshot_open_dirty_buffers(documents, store)
     scope = options.get("autosnapshot_scope") or "open"
     if scope == "all":
-        _snapshot_git_dirty_files(api, store)
+        _log.debug("autosnapshot tick: capturing git-dirty files")
+        _snapshot_git_dirty_files(project_root, store)
+    else:
+        _log.debug("autosnapshot tick: scope=%r, skipping git-dirty files", scope)
 
 
-def _snapshot_open_dirty_buffers(api: Any, store: _LocalHistoryStore) -> None:
-    """Capture snapshots for all open dirty file-backed buffers."""
-    for buf in api.list_buffers():
-        path = getattr(buf, "path", None)
+def _snapshot_open_dirty_buffers(documents: list[Any], store: _LocalHistoryStore) -> None:
+    """Capture snapshots for all open dirty file-backed documents."""
+    for doc in documents:
+        path = getattr(doc, "path", None)
         if path is None:
             continue
-        if not getattr(buf, "dirty", False):
+        if not getattr(doc, "dirty", False):
             continue
         with contextlib.suppress(Exception):
-            store.capture(path, buf.get_text(), reason="autosnapshot")
+            store.capture(path, doc.get_text(), reason="autosnapshot")
 
 
-def _snapshot_git_dirty_files(api: Any, store: _LocalHistoryStore) -> None:
+def _snapshot_git_dirty_files(project_root: Path | None, store: _LocalHistoryStore) -> None:
     """Capture snapshots for git-status dirty tracked files on disk.
 
     Only captures files with worktree modifications (M). Skips untracked
     (??) and ignored (!!) files.
     """
-    root = api.find_root()
+    root = project_root
     if root is None:
+        _log.debug("autosnapshot git: no project root found")
         return
     try:
         result = subprocess.run(
@@ -430,29 +444,46 @@ def _snapshot_git_dirty_files(api: Any, store: _LocalHistoryStore) -> None:
             timeout=10,
             cwd=str(root),
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+        _log.debug("autosnapshot git: git status failed: %s", exc)
         return
     if result.returncode != 0:
+        _log.debug("autosnapshot git: git status rc=%d stderr=%s", result.returncode, result.stderr.strip())
         return
 
-    for line in result.stdout.splitlines():
-        stripped = line.strip()
-        if not stripped:
+    lines = result.stdout.splitlines()
+    _log.debug("autosnapshot git: git status returned %d lines", len(lines))
+
+    captured = 0
+    skipped = 0
+    for line in lines:
+        # --porcelain format: XY path (exactly 2 status chars at [0:2],
+        # then a space at [2], then path at [3:]). Leading space is
+        # meaningful — do NOT strip the line.
+        if len(line) < 4:
             continue
-        status = stripped[:2]
-        filepath_str = stripped[3:].strip()
+        status = line[:2]
+        filepath_str = line[3:].rstrip("\n")
         if status == "??" or status == "!!":
+            skipped += 1
             continue
         if status[0] not in " M" or status[1] not in " M":
+            _log.debug("autosnapshot git: skipping line (status=%r): %r", status, line)
+            skipped += 1
             continue
         filepath = root / filepath_str
         if not filepath.exists():
+            _log.debug("autosnapshot git: file not found: %s", filepath)
+            skipped += 1
             continue
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
-            store.capture(filepath, content, reason="git-autosnapshot")
+            entry = store.capture(filepath, content, reason="git-autosnapshot")
+            if entry is not None:
+                captured += 1
         except Exception:
             continue
+    _log.debug("autosnapshot git: captured %d files from %s", captured, root)
 
 
 class _LocalHistoryPanel:

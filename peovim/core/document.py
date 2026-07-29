@@ -392,13 +392,16 @@ class Document:  # cm:d5f3b8
 
     def flush_undo(self) -> None:
         """Persist undo entries to disk if the undo stack has changed since last flush."""
-        if not self.path or not self._undo_flush_needed:
+        if not self.path:
+            return
+        if not self._undo_flush_needed:
             return
         stack, redo = self._undo.get_entries()
         dirty_count = self._change_counter - self._clean_counter
         try:
             write_undo_file(self.path, stack, redo, dirty_count)
             self._undo_flush_needed = False
+            _log.debug("undo flushed for %s: stack=%d redo=%d dirty=%d", self.path, len(stack), len(redo), dirty_count)
         except Exception:
             _log.exception("undo flush failed for %s", self.path)
 
@@ -412,6 +415,7 @@ class Document:  # cm:d5f3b8
             return
         result = read_undo_file(self.path)
         if result is None:
+            _log.debug("undo restore: no undo file for %s", self.path)
             return
         stack_entries, redo_entries, dirty_count = result
         if dirty_count > 0 and dirty_count <= len(stack_entries):
@@ -426,6 +430,13 @@ class Document:  # cm:d5f3b8
         self._change_counter = dirty_count
         self._clean_counter = 0
         self._undo_flush_needed = False
+        _log.debug(
+            "undo restored for %s: stack=%d redo=%d dirty=%d",
+            self.path,
+            len(stack_entries),
+            len(redo_entries),
+            dirty_count,
+        )
 
     # ------------------------------------------------------------------
     # Events

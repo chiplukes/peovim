@@ -25,6 +25,7 @@ class EventLoopRuntimeController:  # cm:b1c5e8
         self._last_undo_flush: float = 0.0
         self._last_autosnapshot: float = 0.0
         self._last_user_input: float = 0.0
+        self._autosnapshot_primed: bool = False
         self._file_check_warned: set[int] = set()  # doc IDs warned for dirty+external-changed
         self._sidebar_blink_phase: int = -1
 
@@ -172,6 +173,9 @@ class EventLoopRuntimeController:  # cm:b1c5e8
 
     def flush_undo_documents(self) -> None:
         """Persist undo entries for all open documents that need flushing."""
+        options = getattr(self._host, "_options", None)
+        if options is None or not options.get("undofile"):
+            return
         host = self._host
         for doc in host._workspace.documents:
             try:
@@ -193,20 +197,44 @@ class EventLoopRuntimeController:  # cm:b1c5e8
             return
         if now - self._last_autosnapshot < interval:
             return
-        # Defer until the user has been idle for at least 5 s to avoid
-        # stutter from I/O (git status, file reads, atomic writes) during
-        # active typing or scrolling.
+        if not self._autosnapshot_primed:
+            self._autosnapshot_primed = True
+            self._last_autosnapshot = now
+            log.debug("autosnapshot primed: first tick at %f, next in %ds", now, interval)
+            return
+        # Defer until the user has been idle for at least 5 s so I/O
+        # (git status, file reads, atomic writes) doesn't cause visible
+        # stutter during active typing.  But fire anyway once we are
+        # overdue by more than 2× the interval — a snapshot that drifts
+        # a few seconds is acceptable; one that never fires is not.
         _IDLE_THRESHOLD = 5.0
-        if now - self._last_user_input < _IDLE_THRESHOLD:
+        overdue = now - self._last_autosnapshot >= interval * 2
+        if not overdue and now - self._last_user_input < _IDLE_THRESHOLD:
+            log.debug(
+                "autosnapshot deferred (idle=%.1fs, threshold=%.1fs)", now - self._last_user_input, _IDLE_THRESHOLD
+            )
             return
         self._last_autosnapshot = now
+        log.debug("autosnapshot firing (overdue=%s, idle=%.1fs)", overdue, now - self._last_user_input)
 
         try:
+            from pathlib import Path as _Path
+
+            from peovim.config.project import find_project_root
             from peovim.plugins.local_history import autosnapshot_tick
 
-            api = getattr(self._host, "_api", None)
-            if api is not None:
-                autosnapshot_tick(api, options)
+            host = self._host
+            # Prefer active document's directory, fall back to CWD
+            workspace = host._workspace
+            active_doc = workspace.active_window.document
+            start_path = active_doc.path.parent if active_doc.path else _Path.cwd()
+            project_root = find_project_root(start_path)
+
+            autosnapshot_tick(
+                documents=workspace.documents,
+                project_root=project_root,
+                options=options,
+            )
         except Exception:
             log.exception("autosnapshot tick failed")
 
