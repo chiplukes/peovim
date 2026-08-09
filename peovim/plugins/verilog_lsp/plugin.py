@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
+import pathlib
 import shutil
 from typing import TYPE_CHECKING
 
@@ -101,6 +102,8 @@ def _register_keybindings(api: EditorAPI) -> None:
         ("<leader>rt", lambda: trace_signal_under_cursor(api), "Verilog: trace signal"),
         ("<leader>rh", lambda: _toggle_hierarchy_panel(api), "Verilog: hierarchy panel"),
         ("<leader>rr", lambda: _reparse(api), "Verilog: force re-parse"),
+        ("<leader>rc", lambda ctx: _show_verilog_code_actions(api, ctx=ctx), "Verilog: code actions"),
+        ("<leader>re", lambda ctx: _signal_extract(api, ctx=ctx), "Verilog: extract from signal"),
         ("<leader>ru", lambda ctx: _preview_pull_up_selection(api, ctx=ctx), "Verilog: hier-up selection"),
         (
             "<leader>rw",
@@ -138,8 +141,9 @@ def _register_commands(api: EditorAPI) -> None:
     )
     api.commands.register("VerilogPullUpPreview", lambda cmd, ctx: _preview_pull_up_selection(api, cmd=cmd, ctx=ctx))
     api.commands.register("VerilogPullUpApply", lambda cmd, ctx: _apply_pull_up_selection(api, cmd=cmd, ctx=ctx))
-    api.commands.register("VerilogExtractPreview", lambda cmd, ctx: _preview_extract(api, cmd=cmd, ctx=ctx))
-    api.commands.register("VerilogExtractApply", lambda cmd, ctx: _apply_extract(api, cmd=cmd, ctx=ctx))
+    api.commands.register("VerilogExtractPreview", lambda cmd, ctx: _prompt_extract_range(api, cmd=cmd, ctx=ctx))
+    api.commands.register("VerilogExtractApply", lambda cmd, ctx: _prompt_extract_range(api, cmd=cmd, ctx=ctx))
+    api.commands.register("VerilogExtractRange", lambda cmd, ctx: _request_extract_from_command(api, cmd=cmd, ctx=ctx))
     api.commands.register("VerilogPushDown", lambda cmd, ctx: _push_down(api, cmd=cmd, apply_edit=False))
     api.commands.register("VerilogPushDownApply", lambda cmd, ctx: _push_down(api, cmd=cmd, apply_edit=True))
     api.commands.register(
@@ -151,6 +155,8 @@ def _register_commands(api: EditorAPI) -> None:
         lambda cmd, ctx: _push_down_range(api, cmd=cmd, ctx=ctx, apply_edit=True),
     )
     api.commands.register("VerilogStatus", lambda cmd, ctx: _show_status(api))
+    api.commands.register("VerilogCodeAction", lambda cmd, ctx: _show_verilog_code_actions(api, ctx=ctx))
+    api.commands.register("VerilogSignalExtract", lambda cmd, ctx: _request_signal_extract(api, cmd=cmd))
 
 
 def _register_lsp_handlers(api: EditorAPI) -> None:
@@ -280,6 +286,66 @@ def _prompt_push_down_range(
     panel.prompt_push_down_range(_extract_line_range(None, ctx), apply_edit=apply_edit)
 
 
+def _prompt_extract_range(
+    api: EditorAPI,
+    cmd: object | None = None,
+    ctx: object | None = None,
+) -> None:
+    panel = _state.get("hierarchy_panel")
+    if panel is None:
+        return
+    panel._prompt_extract_range(_extract_line_range(cmd, ctx), apply_edit=False)
+
+
+def _request_extract_from_command(
+    api: EditorAPI,
+    cmd: object | None = None,
+    ctx: object | None = None,
+) -> None:
+    panel = _state.get("hierarchy_panel")
+    if panel is None:
+        return
+    args = str(getattr(cmd, "args", "") or "").strip()
+    panel.request_extract_from_command(args, line_range=_extract_line_range(cmd, ctx))
+
+
+def _signal_extract(api: EditorAPI, ctx: object | None = None) -> None:
+    win = api.active_window()
+    if win is None:
+        return
+    buf = win.buffer()
+    line, col = win.cursor
+    try:
+        text = buf.get_line(line)
+    except Exception:
+        return
+    word = _word_at_col(text, col)
+    if not word:
+        api.set_status("No signal name under cursor for trace-extract")
+        return
+    panel = _state.get("hierarchy_panel")
+    if panel is None:
+        return
+    panel.prompt_signal_extract(word)
+
+
+def _request_signal_extract(api: EditorAPI, cmd: object | None = None) -> None:
+    panel = _state.get("hierarchy_panel")
+    if panel is None:
+        return
+    args = str(getattr(cmd, "args", "") or "").strip()
+    panel.request_signal_extract_from_command(args)
+
+
+def _word_at_col(text: str, col: int) -> str:
+    import re
+
+    for m in re.finditer(r"[a-zA-Z_]\w*", text):
+        if m.start() <= col < m.end():
+            return m.group()
+    return ""
+
+
 def _extract_line_range(cmd: object | None = None, ctx: object | None = None) -> tuple[int, int] | None:
     visual_range = getattr(ctx, "visual_range", None)
     if visual_range is not None:
@@ -393,3 +459,108 @@ def teardown(api: EditorAPI) -> None:
     if panel is not None:
         with contextlib.suppress(Exception):
             panel.close()
+
+
+def _show_verilog_code_actions(api: EditorAPI, ctx: object | None = None) -> None:
+    win = api.active_window()
+    if win is None:
+        return
+    buf = win.buffer()
+    path = getattr(buf, "path", None)
+    if not path:
+        return
+    line, col = win.cursor
+    visual_range = getattr(ctx, "visual_range", None)
+    if visual_range is not None:
+        start_line, end_line = int(visual_range[0]), int(visual_range[1])
+        start_col = 0
+        end_col = max(0, len(getattr(buf, "get_line", lambda _: "")(end_line)))
+    else:
+        start_line, end_line = line, line
+        start_col, end_col = col, col
+
+    try:
+        uri = pathlib.Path(path).resolve().as_uri()
+    except ValueError:
+        uri = "file://" + str(path)
+
+    params = {
+        "textDocument": {"uri": uri},
+        "range": {
+            "start": {"line": start_line, "character": start_col},
+            "end": {"line": end_line, "character": end_col},
+        },
+        "context": {"diagnostics": []},
+    }
+
+    def _cb(actions: list | None) -> None:
+        if not actions:
+            api.set_status("No Verilog code actions available")
+            return
+        titles = [action.get("title", "") for action in actions if isinstance(action, dict) and action.get("title")]
+        if not titles:
+            api.set_status("No Verilog code actions available")
+            return
+        action_lookup = {
+            action["title"]: action for action in actions if isinstance(action, dict) and action.get("title")
+        }
+
+        def _on_confirm(title: str | None) -> None:
+            if title is None:
+                return
+            action = action_lookup.get(title)
+            if action is not None:
+                _route_verilog_code_action(api, action)
+
+        api.ui.open_picker("Verilog Code Actions", titles, on_confirm=_on_confirm)
+
+    api.lsp.custom_request_to(
+        "textDocument/codeAction",
+        params,
+        cb=_cb,
+        cmd_contains="veriforge-lsp",
+    )
+
+
+def _route_verilog_code_action(api: EditorAPI, action: dict) -> None:
+    panel = _state.get("hierarchy_panel")
+    if panel is None:
+        return
+    command = action.get("command")
+    if not isinstance(command, dict):
+        return
+    cmd_name = command.get("command", "")
+    cmd_args = command.get("arguments") or []
+    if not cmd_name:
+        return
+
+    direction = ""
+    if isinstance(cmd_args, list) and cmd_args and isinstance(cmd_args[0], dict):
+        direction = cmd_args[0].get("direction", "")
+
+    request_params = {
+        "command": cmd_name,
+        "arguments": cmd_args if isinstance(cmd_args, list) else [],
+    }
+
+    if direction == "collapse":
+        panel._api.lsp.custom_request_to(
+            "workspace/executeCommand",
+            request_params,
+            cb=lambda result: panel._on_collapse_preview(result, apply_edit=False),
+            cmd_contains="veriforge-lsp",
+        )
+    elif direction == "extract":
+        panel._api.lsp.custom_request_to(
+            "workspace/executeCommand",
+            request_params,
+            cb=lambda result: panel._on_extract_preview(result, apply_edit=False),
+            cmd_contains="veriforge-lsp",
+        )
+    else:
+        panel._api.lsp.custom_request_to(
+            "workspace/executeCommand",
+            request_params,
+            cb=lambda result: panel._on_boundary_move_preview(result, apply_edit=False),
+            cmd_contains="veriforge-lsp",
+        )

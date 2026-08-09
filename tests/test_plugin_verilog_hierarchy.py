@@ -1425,9 +1425,10 @@ class TestPluginExtractIntegration:
         visual_keys = [call.args[0] for call in api.keymap.vmap.call_args_list]
         assert "<leader>ru" in normal_keys
         assert "<leader>rw" in normal_keys
+        assert "<leader>rc" in normal_keys
+        assert "<leader>re" in normal_keys
         assert "<leader>ru" in visual_keys
         assert "<leader>rw" in visual_keys
-        assert "<leader>re" not in normal_keys
         assert "<leader>rU" not in normal_keys
         assert "<leader>rW" not in normal_keys
 

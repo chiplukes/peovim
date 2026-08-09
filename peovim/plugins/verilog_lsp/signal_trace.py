@@ -145,6 +145,21 @@ def open_trace_picker(api: EditorAPI, result: dict) -> None:
     drivers = result.get("drivers", [])
     loads = result.get("loads", [])
 
+    signal_file = _uri_to_path(signal.get("file", ""))
+    signal_range = signal.get("definitionRange", {})
+    if signal_file and signal_range:
+        signal_module = signal.get("module", "")
+        sig_label = f"<DEF> {name}  [{signal_module}]" if signal_module else f"<DEF> {name}"
+        items.append(
+            TraceItem(
+                label=sig_label,
+                is_header=False,
+                kind="definition",
+                file=signal_file,
+                range=signal_range,
+            )
+        )
+
     if drivers:
         items.append(TraceItem(label="-- Drivers --", is_header=True))
         for d in drivers:
@@ -179,6 +194,8 @@ def open_trace_picker(api: EditorAPI, result: dict) -> None:
     def _item_style(item: TraceItem) -> tuple | None:
         if item.is_header:
             return None
+        if item.kind == "definition":
+            return ((120, 180, 255),)  # blue for signal definition
         if item.style == "driver":
             return (_COLOR_DRIVER,)
         if item.style in ("boundary", "rename"):

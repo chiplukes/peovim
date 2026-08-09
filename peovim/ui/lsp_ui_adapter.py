@@ -151,8 +151,16 @@ class LspUiAdapter:
             applied = True
 
         command = action.get("command")
-        if isinstance(command, str) and command:
-            arguments = action.get("arguments")
+        cmd_name = ""
+        cmd_args: list = []
+        if isinstance(command, dict):
+            cmd_name = command.get("command", "")
+            cmd_args = list(command.get("arguments", []))
+        elif isinstance(command, str) and command:
+            cmd_name = command
+            cmd_args = list(action.get("arguments") or [])
+
+        if cmd_name:
 
             def _on_result(result: dict | None) -> None:
                 if isinstance(result, dict):
@@ -161,12 +169,12 @@ class LspUiAdapter:
                     elif "changes" in result or "documentChanges" in result:
                         self.apply_workspace_edit(result)
                 if host._editor_state is not None:
-                    host._editor_state.message = f"Applied code action: {action.get('title', command)}"
+                    host._editor_state.message = f"Applied code action: {action.get('title', cmd_name)}"
                     host._invalidate_message()
 
             execute = getattr(feats, "execute_command", None)
             if callable(execute):
-                execute(command, arguments if isinstance(arguments, list) else [], _on_result)
+                execute(cmd_name, cmd_args, _on_result)
                 return
 
         if applied and host._editor_state is not None:

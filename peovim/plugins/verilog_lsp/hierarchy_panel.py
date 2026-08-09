@@ -262,6 +262,8 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
         " c  hier-up (safe collapse when possible)",
         " w  hier-down into submodule",
         " g  wrapper candidates",
+        " V  hierarchy graph (text)",
+        " M  hierarchy graph (mermaid)",
         " p  pin as top module",
         " P  unpin top module",
         " j/k  move  h  collapse",
@@ -476,6 +478,16 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
         if key == "g":
             self._open_candidate_picker()
             return True
+        if key == "V":
+            value = getattr(node, "value", None)
+            top_module = ""
+            if isinstance(value, dict):
+                top_module = value.get("moduleName", "") or value.get("name", "") or ""
+            self._open_hierarchy_graph(top=top_module)
+            return True
+        if key == "M":
+            self._open_hierarchy_graph_mermaid()
+            return True
         return False
 
     def _jump_to_instantiation(self, node: Any) -> None:
@@ -553,10 +565,10 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             self.show()
 
     def preview_extract_from_active_selection(self, line_range: tuple[int, int] | None = None) -> None:
-        self._preview_extract(line_range=line_range)
+        self._do_extract(line_range=line_range)
 
     def apply_extract_from_active_selection(self, line_range: tuple[int, int] | None = None) -> None:
-        self._preview_extract(line_range=line_range)
+        self._do_extract(line_range=line_range)
 
     def preview_pull_up_from_active_selection(self, line_range: tuple[int, int] | None = None) -> None:
         self._preview_pull_up_selection(line_range=line_range)
@@ -776,6 +788,10 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             or source.get("instancePath")
             or (preview.get("afterHierarchy", {}).get("createdModule", "") if isinstance(preview, dict) else "")
         )
+        if isinstance(preview, dict) and _has_push_down_multi_instance_diagnostic(preview):
+            metadata = preview.get("metadata", {}) if isinstance(preview, dict) else {}
+            site_count = metadata.get("siteCount", "?") if isinstance(metadata, dict) else "?"
+            self._set_status(f"Push-down affects {site_count} parent instance site(s) -- review edits carefully")
         if (
             result.get("ok")
             and isinstance(edit, dict)
@@ -893,8 +909,87 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
         self._show_boundary_move_preview(preview if isinstance(preview, dict) else {})
 
     def _preview_extract(self, line_range: tuple[int, int] | None = None) -> None:
+        self._do_extract(line_range=line_range)
+
+    def _apply_extract(self, line_range: tuple[int, int] | None = None) -> None:
+        self._preview_extract(line_range=line_range)
+
+    def _prompt_extract_range(
+        self,
+        line_range: tuple[int, int] | None,
+        *,
+        apply_edit: bool = False,
+    ) -> None:
+        self._pending_push_down_range = line_range
+        command = "VerilogExtractRange"
+        if line_range is not None:
+            start_line, end_line = min(line_range), max(line_range)
+            self._set_status(
+                f"Extract selection lines {start_line + 1}-{end_line + 1}: enter <module_name> [instance_name]"
+            )
+        else:
+            self._set_status("Extract selection: enter <module_name> [instance_name]")
+        self._api.open_cmdline(f"{command} ")
+
+    def prompt_signal_extract(self, signal_name: str) -> None:
+        self._pending_push_down = {
+            "signalName": signal_name,
+        }
+        self._set_status(f"Trace-extract for '{signal_name}': enter <module_name>")
+        self._api.open_cmdline("VerilogSignalExtract ")
+
+    def request_signal_extract_from_command(self, args: str) -> None:
+        pending = self._pending_push_down
+        self._pending_push_down = None
+        if pending is None or "signalName" not in pending:
+            self._set_status("No signal marked for trace-extract; press <leader>re on a signal first")
+            return
+        parts = args.split()
+        if not parts:
+            self._set_status("Trace-extract requires a module name")
+            return
+        signal_name = pending["signalName"]
+        module_name = parts[0]
+        extracted_module_name = parts[1] if len(parts) > 1 else f"{signal_name}_extracted"
         self._close_preview_float()
-        request = _active_extract_request(self._api, line_range=line_range)
+        request = {
+            "direction": "extract",
+            "selection": {"kind": "signal", "signal": signal_name, "module": module_name},
+            "extractedModuleName": extracted_module_name,
+        }
+        self._api.lsp.custom_request_to(
+            "workspace/executeCommand",
+            {"command": "verilog/previewHierarchyBoundaryMove", "arguments": [request]},
+            cb=lambda result: self._on_extract_preview(result, apply_edit=False),
+            cmd_contains="veriforge-lsp",
+        )
+
+    def request_extract_from_command(
+        self,
+        args: str,
+        *,
+        line_range: tuple[int, int] | None = None,
+        apply_edit: bool = False,
+    ) -> None:
+        parts = args.split()
+        if not parts:
+            self._pending_push_down_range = None
+            self._set_status("Extract requires a module name")
+            return
+        extracted_module_name = parts[0]
+        if line_range is None:
+            line_range = self._pending_push_down_range
+        self._pending_push_down_range = None
+        self._do_extract(line_range=line_range, extracted_module_name=extracted_module_name)
+
+    def _do_extract(
+        self,
+        line_range: tuple[int, int] | None = None,
+        *,
+        extracted_module_name: str = "extracted_logic",
+    ) -> None:
+        self._close_preview_float()
+        request = _active_extract_request(self._api, line_range=line_range, extracted_module_name=extracted_module_name)
         if not request:
             self._set_status("No source buffer available for hier-down preview")
             return
@@ -904,9 +999,6 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             cb=lambda result: self._on_extract_preview(result, apply_edit=False),
             cmd_contains="veriforge-lsp",
         )
-
-    def _apply_extract(self, line_range: tuple[int, int] | None = None) -> None:
-        self._preview_extract(line_range=line_range)
 
     def _preview_pull_up_selection(self, line_range: tuple[int, int] | None = None) -> None:
         self._close_preview_float()
@@ -1020,6 +1112,13 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             open_proposed_edits_with_initial,
         )
 
+        review_meta = result.get("review", {})
+        if not isinstance(review_meta, dict):
+            review_meta = {}
+        review_message = str(review_meta.get("message") or "")
+        review_file_count = int(review_meta.get("fileCount") or len(files))
+        review_atomic = review_meta.get("atomic", False)
+
         reviews: list[ProposedEditReview] = []
         for item in files:
             if not isinstance(item, dict):
@@ -1028,6 +1127,9 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             proposed_text = item.get("proposedText")
             if not isinstance(current_text, str) or not isinstance(proposed_text, str):
                 continue
+            info_message = review_message
+            if review_atomic:
+                info_message = f"{info_message} (atomic)" if info_message else "(atomic)"
             reviews.append(
                 ProposedEditReview(
                     title=title.strip(),
@@ -1038,6 +1140,8 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
                     filetype="verilog",
                     file_path=str(item.get("file") or ""),
                     on_confirm=_confirm,
+                    info_message=info_message,
+                    file_count=review_file_count,
                 )
             )
         if not reviews:
@@ -1130,6 +1234,45 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
             cb=lambda result: self._on_candidate_graph(result),
             cmd_contains="veriforge-lsp",
         )
+
+    def _open_hierarchy_graph(self, *, top: str = "", max_depth: int | None = None) -> None:
+        self._close_preview_float()
+        args: dict[str, Any] = {"format": "text"}
+        if top:
+            args["top"] = top
+        if max_depth is not None:
+            args["maxDepth"] = max_depth
+        self._api.lsp.custom_request_to(
+            "workspace/executeCommand",
+            {"command": "verilog/hierarchyGraph", "arguments": [args]},
+            cb=lambda result: self._on_graph_visualization(result, "text"),
+            cmd_contains="veriforge-lsp",
+        )
+
+    def _open_hierarchy_graph_mermaid(self, *, top: str = "") -> None:
+        self._close_preview_float()
+        args: dict[str, Any] = {"format": "mermaid"}
+        if top:
+            args["top"] = top
+        self._api.lsp.custom_request_to(
+            "workspace/executeCommand",
+            {"command": "verilog/hierarchyGraph", "arguments": [args]},
+            cb=lambda result: self._on_graph_visualization(result, "mermaid"),
+            cmd_contains="veriforge-lsp",
+        )
+
+    def _on_graph_visualization(self, result: dict | None, fmt: str) -> None:
+        if not isinstance(result, dict) or not result.get("ok"):
+            self._set_status("No hierarchy graph visualization from verilog_lsp")
+            return
+        visualization = result.get("visualization", "")
+        if not visualization:
+            self._set_status(f"No {fmt} visualization returned")
+            return
+        try:
+            self._api.open_scratch_buffer(visualization, filetype=fmt, name=f"Hierarchy Graph ({fmt})")
+        except Exception as e:
+            log.debug("open_scratch_buffer error: %s", e)
 
     def _on_candidate_graph(self, result: dict | None) -> None:
         if not isinstance(result, dict) or not result.get("ok"):
@@ -1302,7 +1445,9 @@ def _refactor_badge(value: dict | None, source_path: str, destination_path: str)
     return ",".join(badges)
 
 
-def _active_extract_request(api: Any, line_range: tuple[int, int] | None = None) -> dict | None:
+def _active_extract_request(
+    api: Any, line_range: tuple[int, int] | None = None, *, extracted_module_name: str = "extracted_logic"
+) -> dict | None:
     buffer = api.active_buffer()
     path = getattr(buffer, "path", None)
     if not path:
@@ -1315,7 +1460,7 @@ def _active_extract_request(api: Any, line_range: tuple[int, int] | None = None)
             "start": {"line": start_line, "character": start_col},
             "end": {"line": end_line, "character": end_col},
         },
-        "extractedModuleName": "extracted_logic",
+        "extractedModuleName": extracted_module_name,
     }
 
 
@@ -1638,6 +1783,22 @@ def _format_boundary_move_preview(preview: dict) -> list[str]:
         lines.append("")
         lines.append("Diagnostics:")
         lines.extend(_format_diagnostics(diagnostics))
+    metadata = preview.get("metadata", {})
+    if isinstance(metadata, dict):
+        scope = metadata.get("scope", "")
+        site_count = metadata.get("siteCount", 0)
+        if scope or site_count:
+            lines.append("")
+            if scope:
+                lines.append(f"Scope:     {scope}")
+            if isinstance(site_count, int) and site_count > 0:
+                lines.append(f"Sites affected: {site_count}")
+            parent_modules = metadata.get("parentModules", [])
+            if parent_modules:
+                lines.append(f"Parent modules: {', '.join(sorted(str(m) for m in parent_modules))}")
+            site_paths = metadata.get("sitePaths", [])
+            if site_paths:
+                lines.append(f"Site paths:  {', '.join(str(p) for p in site_paths)}")
     if preview.get("ok") and not preview.get("applyReady"):
         lines.append("")
         lines.append("Preview only: generalized hierarchy rewrites are not apply-ready yet.")
@@ -1698,6 +1859,13 @@ def _boundary_move_review_text(preview: dict) -> tuple[str, str]:
         current.extend(_format_diagnostics(diagnostics))
         proposed.extend(["", "Diagnostics:"])
         proposed.extend(_format_diagnostics(diagnostics))
+    metadata = preview.get("metadata", {})
+    if isinstance(metadata, dict):
+        site_count = metadata.get("siteCount", 0)
+        if isinstance(site_count, int) and site_count > 1:
+            warning = f"Design-wide pull-up: affects {site_count} parent module sites"
+            current.extend(["", warning])
+            proposed.extend(["", warning])
     if preview.get("ok") and not preview.get("applyReady"):
         proposed.extend(["", "Preview only: generalized hierarchy rewrites are not apply-ready yet."])
     return "\n".join(current) + "\n", "\n".join(proposed) + "\n"
@@ -1776,5 +1944,16 @@ def _format_diagnostics(diagnostics: Any) -> list[str]:
         severity = diagnostic.get("severity", "info")
         code = diagnostic.get("code", "")
         message = diagnostic.get("message", "")
-        lines.append(f"  [{severity}] {code}: {message}")
+        if code == "push-down-module-multi-instance":
+            lines.append(f"  >>> Multi-instance: {message}")
+        else:
+            lines.append(f"  [{severity}] {code}: {message}")
     return lines
+
+
+def _has_push_down_multi_instance_diagnostic(preview: dict) -> bool:
+    diagnostics = preview.get("diagnostics", [])
+    for diagnostic in diagnostics or []:
+        if isinstance(diagnostic, dict) and diagnostic.get("code") == "push-down-module-multi-instance":
+            return True
+    return False

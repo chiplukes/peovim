@@ -770,6 +770,8 @@ Requires `peovim.plugins.verilog_lsp`. All bindings use a filetype guard and onl
 | `<leader>pv` | `vl.toggle_hierarchy(api)` | Normal | Toggle hierarchy panel (panel group alias) |
 | `<leader>rt` | `vl.trace_signal(api)` | Normal | Trace signal under cursor (picker) |
 | `<leader>rr` | `vl.reparse(api)` | Normal | Force full workspace re-parse |
+| `<leader>rc` | `_show_verilog_code_actions` | Normal, Visual | Show Verilog LSP code actions (collapse/extract) |
+| `<leader>re` | `_signal_extract` | Normal | Extract signal neighborhood to submodule |
 | `<leader>ru` | `_preview_pull_up_selection` | Normal, Visual | Preview hier-up for current line/selection |
 | `<leader>rw` | `_prompt_push_down_range` | Normal, Visual | Preview hier-down (prompts for target module) |
 
@@ -784,6 +786,8 @@ Requires `peovim.plugins.verilog_lsp`. All bindings use a filetype guard and onl
 | `c` | Preview hier-up for highlighted instance |
 | `w` | Preview hier-down into target submodule |
 | `g` | Open wrapper-candidate picker |
+| `V` | Open hierarchy graph (text format, scoped to selected module) |
+| `M` | Open hierarchy graph (mermaid format) |
 | `p` | Pin highlighted module as top |
 | `P` | Clear top module pin |
 | `<Esc>` | Close preview float and clear source/destination marks |
@@ -854,6 +858,8 @@ See [§Plugin: Proposed Edit Review](#plugin-proposed-edit-review) for review ke
 | `:VerilogHierUp` | Preview hier-up for current line/selection |
 | `:VerilogHierDownRange <module> [instance]` | Preview hier-down |
 | `:VerilogPushDownRange <module> [instance]` | Preview range-based hier push-down |
+| `:VerilogCodeAction` | Show Verilog LSP code actions (collapse/extract) |
+| `:VerilogSignalExtract <module> [name]` | Extract signal neighborhood to submodule |
 | `:DiffDebug` | Print current diff session state |
 | `:LogOn [modules=...] [level=...]` | Enable logging |
 | `:LogView` | Open log output panel |

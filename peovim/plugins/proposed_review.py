@@ -38,6 +38,8 @@ class ProposedEditReview:
     filetype: str = ""
     file_path: str = ""
     on_confirm: Callable[[], None] | None = None
+    info_message: str = ""
+    file_count: int = 0
 
     def __str__(self) -> str:
         return f"{self.title}: {self.proposed_label}"
@@ -130,8 +132,13 @@ class ProposedEditReviewController:
             on_confirm=review.on_confirm,
         )
         self._align_to_first_block(current_window, proposed_window, blocks)
-        self._publish_statusline_state()
-        _set_status(self._api, f"Review: {review.title} ({len(blocks)} change blocks)")
+        self._publish_statusline_state(review)
+        status = f"Review: {review.title} ({len(blocks)} change blocks)"
+        if review.file_count > 1:
+            status += f", {review.file_count} files"
+        if review.info_message:
+            status += f" — {review.info_message}"
+        _set_status(self._api, status)
 
     def confirm(self) -> None:
         session = self._session
@@ -303,21 +310,24 @@ class ProposedEditReviewController:
         window.set_scroll_line(max(0, target_line - 2))
         window.scroll_to_cursor()
 
-    def _publish_statusline_state(self) -> None:
+    def _publish_statusline_state(self, review: ProposedEditReview | None = None) -> None:
         session = self._session
         if session is None:
             self._api.set_compare_status(None)
             return
-        self._api.set_compare_status(
-            {
-                "left": session.current_label,
-                "right": session.proposed_label,
-                "left_dirty": False,
-                "right_dirty": False,
-                "blocks": len(session.blocks),
-                "active_side": self._active_side(),
-            }
-        )
+        status: dict[str, Any] = {
+            "left": session.current_label,
+            "right": session.proposed_label,
+            "left_dirty": False,
+            "right_dirty": False,
+            "blocks": len(session.blocks),
+            "active_side": self._active_side(),
+        }
+        if review is not None and review.info_message:
+            status["message"] = review.info_message
+        if review is not None and review.file_count > 1:
+            status["files"] = review.file_count
+        self._api.set_compare_status(status)
 
 
 def setup(api: EditorAPI) -> None:
