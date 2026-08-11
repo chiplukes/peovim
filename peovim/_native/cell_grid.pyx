@@ -313,6 +313,8 @@ cdef class CellGrid:
               fg=None, bg=None, int attrs=0):
         """Write a single character cell. Silently ignores out-of-bounds."""
         cdef int base
+        if char == "\t":
+            char = " "
         if 0 <= row < self.height and 0 <= col < self.width:
             base = self._idx(row, col)
             self._cur_buf[base]     = ord(char)
@@ -327,6 +329,7 @@ cdef class CellGrid:
         cdef int start, span, i, base, efg, ebg
         if row < 0 or row >= self.height or not text:
             return
+        text = text.replace("\t", " ")
         start = col if col >= 0 else 0
         if start >= self.width:
             return

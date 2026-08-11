@@ -66,6 +66,8 @@ class CellGrid:
 
     def write(self, row: int, col: int, char: str, fg: Color = None, bg: Color = None, attrs: int = 0) -> None:
         """Write a single character cell. Silently ignores out-of-bounds."""
+        if char == "\t":
+            char = " "
         if 0 <= row < self.height and 0 <= col < self.width:
             style_key = (fg, bg, attrs)
             char_map = _CELL_CACHE.get(style_key)
@@ -83,6 +85,7 @@ class CellGrid:
         """Write a string of characters starting at (row, col). Clips at width."""
         if row < 0 or row >= self.height or not text:
             return
+        text = text.replace("\t", " ")
         start = max(col, 0)
         if start >= self.width:
             return
