@@ -106,7 +106,7 @@ class NotifyManager:
         for notif in self._queue[:_NOTIFY_MAX_STACK]:
             h = self._notif_height(notif)
             w = _NOTIFY_WIDTH
-            x = max(sidebar_width, grid.width - w)
+            x = max(sidebar_width + 1, grid.width - w)
             if y + h > grid.height:
                 break
             self._render_notif(grid, notif, x, y, w, h)
