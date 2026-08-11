@@ -318,6 +318,7 @@ def draw_border(
     # Sides
     for row in range(1, h - 1):
         grid.write(y + row, x, "│", fg=fg, bg=bg)
+        grid.fill(y + row, x + 1, inner_w, bg=bg)
         grid.write(y + row, x + w - 1, "│", fg=fg, bg=bg)
     # Bottom
     if h > 1:
