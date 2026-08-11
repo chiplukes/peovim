@@ -160,6 +160,6 @@ class NotifyManager:
         for message_line in notif.message_lines(inner_w):
             if row >= y + h - 1:
                 break
-            msg = message_line[:inner_w].ljust(inner_w)
+            msg = message_line.expandtabs(4)[:inner_w].ljust(inner_w)
             grid.write_str(row, inner_x, msg, fg=fg, bg=_NOTIFY_BG)
             row += 1
