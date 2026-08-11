@@ -220,7 +220,12 @@ class OverlayPresentationController:
                 host._report_runtime_error("float render", exc)
         if host._notify_manager is not None:
             try:
-                host._notify_manager.render(grid)
+                sidebar_w = (
+                    host._sidebar.reserved_width(grid.width)
+                    if (host._sidebar is not None and getattr(host._sidebar, "visible", False))
+                    else 0
+                )
+                host._notify_manager.render(grid, sidebar_width=sidebar_w)
             except Exception as exc:
                 host._report_runtime_error("notification render", exc)
         if host._picker is not None and getattr(host._picker, "is_open", False):

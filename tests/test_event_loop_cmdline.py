@@ -144,7 +144,7 @@ class FakeNotifyManager:
     def notify(self, message: str, level: str = "info", title: str = "", timeout: float = 3.0) -> None:
         self.notifications.append({"message": message, "level": level, "title": title, "timeout": timeout})
 
-    def render(self, _grid: CellGrid) -> None:
+    def render(self, _grid: CellGrid, *, sidebar_width: int = 0) -> None:
         self.render_order.append("notify")
 
 

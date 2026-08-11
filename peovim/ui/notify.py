@@ -98,17 +98,15 @@ class NotifyManager:
     # Render
     # ------------------------------------------------------------------
 
-    def render(self, grid: CellGrid) -> None:
+    def render(self, grid: CellGrid, *, sidebar_width: int = 0) -> None:
         """Composite active notifications on the grid. Expires timed-out ones."""
         now = time.monotonic()
-        # Prune expired
         self._queue = [n for n in self._queue if n.timeout == 0 or (now - n.created_at) < n.timeout]
-        # Render from top, newest last (bottom of stack)
         y = 0
         for notif in self._queue[:_NOTIFY_MAX_STACK]:
             h = self._notif_height(notif)
             w = _NOTIFY_WIDTH
-            x = max(0, grid.width - w)
+            x = max(sidebar_width, grid.width - w)
             if y + h > grid.height:
                 break
             self._render_notif(grid, notif, x, y, w, h)
