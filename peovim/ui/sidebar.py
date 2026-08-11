@@ -170,6 +170,13 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
                 return False
             self.show_panel(name, panel, focus=True)
             return True
+
+        panel = self.active_panel
+        body_row = row - len(names) - 1
+        if body_row >= 0 and panel is not None and hasattr(panel, "click"):
+            self.focus()
+            return bool(panel.click(body_row, col))
+
         self.focus()
         return True
 

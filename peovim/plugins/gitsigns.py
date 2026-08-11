@@ -100,8 +100,11 @@ class _GitStatusSidebarPanel:
             return
         path = Path(status_path)
         if path.is_file():
-            self._api.open_buffer(path)
-            self._api.ui.blur_sidebar()
+            if _cmd_compare_file(self._api, status_path):
+                self._api.ui.blur_sidebar()
+            else:
+                self._api.open_buffer(path)
+                self._api.ui.blur_sidebar()
 
     def _on_key(self, key: str, node: Any) -> bool:
         branch_ref = _selected_branch_ref(node)
@@ -147,6 +150,19 @@ class _GitStatusSidebarPanel:
             return True
         if key == "m" and branch_ref:
             self._api.open_cmdline(f"GitMergeBranch {branch_ref}")
+            return True
+        return False
+
+    def click(self, row: int, col: int) -> bool:  # type: ignore[override]
+        visible = self._tree._visible_nodes()
+        vis_idx = row + getattr(self._tree, "_scroll_top", 0)
+        if 0 <= vis_idx < len(visible):
+            node, _depth = visible[vis_idx]
+            self._tree._selected_idx = vis_idx
+            if node.has_children():
+                self._tree.toggle(node)
+            else:
+                self._on_select(node)
             return True
         return False
 
