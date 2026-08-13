@@ -222,3 +222,56 @@ class TestTreeView:
         tree.render(grid)
 
         assert grid._current[0][0][1] == (1, 2, 3)
+
+
+class TestTreeViewClick:
+    def test_click_on_collapsed_parent_expands_it(self):
+        node = _dir_node("mydir", [_leaf("child")])
+        tree = TreeView([node], width=30)
+
+        assert tree.click(0, 0)
+        assert node.expanded
+        assert tree.selected_node is node
+
+    def test_click_on_expanded_parent_collapses_it(self):
+        node = _dir_node("mydir", [_leaf("child")])
+        tree = TreeView([node], width=30)
+        tree.expand(node)
+
+        assert tree.click(0, 0)
+        assert not node.expanded
+
+    def test_click_on_leaf_calls_on_select(self):
+        selected: list[TreeNode] = []
+        nodes = [_leaf("a"), _leaf("b", value="b-value")]
+        tree = TreeView(nodes, on_select=lambda n: selected.append(n), width=30)
+
+        assert tree.click(1, 0)
+
+        assert selected == [nodes[1]]
+        assert tree.selected_node is nodes[1]
+
+    def test_click_respects_title_row(self):
+        selected: list[TreeNode] = []
+        node = _leaf("a")
+        tree = TreeView([node], title="Title", on_select=lambda n: selected.append(n), width=30)
+
+        assert not tree.click(0, 0)  # title row
+        assert tree.click(1, 0)  # first node row
+        assert selected == [node]
+
+    def test_click_respects_scroll_offset(self):
+        selected: list[TreeNode] = []
+        nodes = [_leaf(f"item{i}", value=i) for i in range(20)]
+        tree = TreeView(nodes, on_select=lambda n: selected.append(n), width=30)
+        grid = CellGrid(30, 5)
+        tree._selected_idx = 19
+        tree.render(grid)  # scrolls so the selected row is visible
+
+        assert tree._scroll_top > 0
+        assert tree.click(0, 0)
+        assert selected == [nodes[tree._scroll_top]]
+
+    def test_click_below_last_node_returns_false(self):
+        tree = TreeView([_leaf("a")], width=30)
+        assert not tree.click(5, 0)

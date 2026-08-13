@@ -214,6 +214,20 @@ Common picker mappings depend on your `init.py` config. Typical built-ins (via
 The sidebar framework is used for explorer, diagnostics, outline, references, git
 status, and marker groups. See [plugins.md](plugins.md) for plugin-specific keys.
 
+### Mouse support
+
+When the terminal reports mouse events, clicks work across the UI:
+
+- Click a window to focus it and move the cursor; drag to select; click or drag
+  the scrollbar (when enabled) to scroll.
+- Click a sidebar panel header to open that panel; click a panel item to act on
+  it (expand/collapse folders in the explorer, open files, jump to a
+  diagnostic/marker/symbol/reference, toggle git status entries, etc.). Item
+  clicks behave like pressing `<CR>` on the item.
+- Click a bottom-panel tab to switch tabs; click a log line to move the cursor
+  to it.
+- Scroll wheel scrolls the window under the pointer.
+
 ---
 
 ## Git and diff workflows

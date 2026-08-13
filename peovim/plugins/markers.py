@@ -426,6 +426,11 @@ class _MarkersSidebarPanel:
         self._tree.feed_key(key)
         return True
 
+    def click(self, row: int, col: int) -> bool:
+        if row <= 0:
+            return True
+        return self._tree.click(row - 1, col)
+
     def on_show(self) -> None:
         self.refresh()
 

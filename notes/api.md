@@ -1234,7 +1234,7 @@ Default keybindings inside the tree view:
 
 #### Dockable panels (sidebar and bottom)
 
-Both the sidebar and bottom panel are instances of `PanelHost` and support the same content protocol: `render(grid: CellGrid) -> None`, `feed_key(key: str) -> bool`.  Optional attributes (`title`, `width`, `on_show`, `on_hide`, `on_focus`, `on_blur`) are queried with `getattr` defaults.
+Both the sidebar and bottom panel are instances of `PanelHost` and support the same content protocol: `render(grid: CellGrid) -> None`, `feed_key(key: str) -> bool`.  Optional attributes (`title`, `width`, `on_show`, `on_hide`, `on_focus`, `on_blur`) are queried with `getattr` defaults.  Content may also define `click(row, col) -> bool` (sidebar panels) or `click(col, row) -> bool` (bottom tabs) to handle mouse clicks on the panel body; the hosts forward body clicks automatically (sidebar header clicks switch panels).  Tree-backed panels can delegate to `TreeView.click(row, col)`, which selects the clicked node and toggles/expands it like `<CR>`.
 
 **Unified API** (host-agnostic):
 

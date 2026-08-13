@@ -64,6 +64,11 @@ class _ExplorerSidebarPanel:
         self.tree.feed_key(key)
         return True
 
+    def click(self, row: int, col: int) -> bool:
+        if row <= 0:
+            return True
+        return self.tree.click(row - 1, col)
+
     def on_focus(self) -> None:
         self.tree.focused = True
 

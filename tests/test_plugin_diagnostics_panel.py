@@ -193,6 +193,52 @@ class TestDiagnosticsPanelPlugin:
 
         assert interval_calls == []
 
+    def test_click_on_file_group_toggles_expansion(self, monkeypatch):
+        api = _make_api()
+        monkeypatch.setattr(
+            api,
+            "list_diagnostics",
+            lambda: [
+                {"path": Path("/tmp/other.py"), "line": 8, "col": 1, "severity": "E", "message": "broken"},
+                {"path": Path("/tmp/other.py"), "line": 10, "col": 0, "severity": "W", "message": "unused"},
+            ],
+        )
+
+        setup(api)
+        panel = api.ui.get_sidebar_panel("diagnostics")
+        assert isinstance(panel, _DiagnosticsSidebarPanel)
+        panel.refresh()
+        assert panel._tree._roots[0].expanded
+
+        # row 0 = title, row 1 = file group node
+        assert panel.click(1, 0)
+        assert not panel._tree._roots[0].expanded
+
+    def test_click_on_diagnostic_jumps_to_location(self, monkeypatch):
+        api = _make_api()
+        monkeypatch.setattr(
+            api,
+            "list_diagnostics",
+            lambda: [
+                {"path": Path("/tmp/other.py"), "line": 8, "col": 1, "severity": "E", "message": "broken"},
+            ],
+        )
+
+        setup(api)
+        panel = api.ui.get_sidebar_panel("diagnostics")
+        assert isinstance(panel, _DiagnosticsSidebarPanel)
+        panel.refresh()
+        jumped: list[tuple[Path, int, int]] = []
+        blurred: list[bool] = []
+        monkeypatch.setattr(api, "goto_location", lambda path, line=0, col=0: jumped.append((Path(path), line, col)))
+        monkeypatch.setattr(api.ui, "blur_sidebar", lambda: blurred.append(True))
+
+        # row 0 = title, row 1 = file group, row 2 = diagnostic entry
+        assert panel.click(2, 0)
+
+        assert jumped == [(Path("/tmp/other.py"), 8, 1)]
+        assert blurred == [True]
+
 
 class TestDiagnosticsPanelHelpers:
     def test_build_diagnostic_nodes_groups_by_file(self):

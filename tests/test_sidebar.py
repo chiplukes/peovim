@@ -125,6 +125,37 @@ class TestSidebarHost:
         assert host.active_panel_name == "outline"
         assert host.focused
 
+    def test_click_body_forwards_to_panel_click(self):
+        host = SidebarHost()
+        clicks: list[tuple[int, int]] = []
+
+        class _ClickablePanel(_DummyPanel):
+            def click(self, row: int, col: int) -> bool:
+                clicks.append((row, col))
+                return True
+
+        panel = _ClickablePanel()
+        host.register_panel("git-status", _DummyPanel())
+        host.show_panel("explorer", panel, focus=False)
+
+        # rows 0-1 = headers, row 2 = separator, row 3 = first body row
+        assert host.click(3, 4)
+        assert clicks == [(0, 4)]
+        assert host.focused
+
+    def test_click_body_via_tree_sidebar_panel_toggles_folder(self):
+        host = SidebarHost()
+        child = TreeNode(label="child.py")
+        folder = TreeNode(label="dir", children_fn=lambda: [child])
+        tree = TreeView([folder], title="Explorer", width=20)
+        panel = TreeSidebarPanel(tree, width=20)
+        host.show_panel("explorer", panel, focus=False)
+
+        # row 0 = header, row 1 = separator, row 2 = tree title, row 3 = first node
+        assert host.click(3, 0)
+        assert folder.expanded
+        assert host.focused
+
     def test_feed_key_routes_only_while_focused(self):
         host = SidebarHost()
         panel = _DummyPanel()

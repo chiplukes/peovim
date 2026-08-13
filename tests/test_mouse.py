@@ -227,6 +227,30 @@ class TestMouseDispatcher:
         assert window.cursor.line == 0
         assert window.cursor.col == 0
 
+    def test_click_on_sidebar_tree_item_expands_folder(self):
+        from peovim.ui.sidebar import TreeSidebarPanel
+        from peovim.ui.tree_view import TreeNode, TreeView
+
+        folder = TreeNode(label="dir", children_fn=lambda: [TreeNode(label="child.py")])
+        panel = TreeSidebarPanel(TreeView([folder], title="Explorer", width=20), width=20)
+        sidebar = SidebarHost()
+        sidebar.show_panel("explorer", panel, focus=False)
+
+        md, workspace, window, layout, leaf, disp = _make_dispatcher(
+            layout_rect=Rect(21, 0, 59, 22),
+            sidebar=sidebar,
+            sidebar_rect=Rect(0, 0, 20, 22),
+        )
+
+        # row 0 = panel header, row 1 = separator, row 2 = tree title, row 3 = folder node
+        event = MouseEvent(row=3, col=2, button=0, pressed=True)
+        md.handle(event)
+
+        assert folder.expanded
+        assert sidebar.focused
+        assert window.cursor.line == 0
+        assert window.cursor.col == 0
+
     def test_click_outside_all_windows_is_noop(self):
         md, workspace, window, layout, leaf, disp = _make_dispatcher()
         initial_line = window.cursor.line

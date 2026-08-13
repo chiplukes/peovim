@@ -511,7 +511,7 @@ bottom panel — both inheriting from a shared `PanelHost` base class.
 - Plug execution: `_execute_plug` uses `_binding_registry` if set, otherwise falls back to `_builtin_plugs()` dict (overridden by each subclass)
 - `preferred_host` metadata per tab: `_preferred_host: dict[str, str]` stores "sidebar" or "bottom" for each registered name
 
-Content objects only need `render(grid: CellGrid) -> None` and `feed_key(key: str) -> bool`. Optional attributes (`title`, `width`, `on_show`, `on_hide`, `on_focus`, `on_blur`) are queried with `getattr` defaults, so the same content works in either host.
+Content objects only need `render(grid: CellGrid) -> None` and `feed_key(key: str) -> bool`. Optional attributes (`title`, `width`, `on_show`, `on_hide`, `on_focus`, `on_blur`) are queried with `getattr` defaults, so the same content works in either host. Content may also define `click` to receive mouse clicks on its body (see "Mouse clicks" below).
 
 #### Persistent sidebar host
 
@@ -563,6 +563,15 @@ Key dispatch is handled in `presentation_controller.handle_sidebar_navigation_ke
 
 When the sidebar is visible but not focused, only `SidebarFocusLeft` is checked; other nav keys pass through to the engine. When the sidebar is focused, `SidebarFocusRight/NextPanel/PrevPanel` are checked first, then unmatched keys are forwarded to the active panel's `feed_key`.
 
+#### Mouse clicks
+
+`MouseDispatcher` routes clicks inside the sidebar rect to `SidebarHost.click(row, col)` using panel-local coordinates:
+
+- Rows `0..len(panels)-1` are the accordion headers: clicking one shows that panel (with focus).
+- The body (below the separator) is forwarded to the active panel's `click(body_row, col)` when defined; otherwise the click only focuses the sidebar.
+
+Tree-backed panels implement `click` by delegating to `TreeView.click(row, col)` (`peovim/ui/tree_view.py`), which maps the row to a visible node (title row and scroll offset aware), selects it, then toggles expansion when the node has children or invokes `on_select` otherwise — the same semantics as `<CR>`. Panels that render extra rows offset accordingly (explorer and markers reserve row 0 for a hint bar; the verilog hierarchy panel ignores the separator/help rows). All built-in sidebar panels (explorer, git status, svn status, outline, references, workspace symbols, diagnostics, markers, file history, verilog hierarchy) support item clicks.
+
 ### Bottom panel
 
 The editor has a persistent bottom panel (`peovim/ui/bottom_panel.py`) that mirrors the sidebar pattern but is oriented horizontally along the bottom of the screen (above the status bar).
@@ -579,7 +588,7 @@ Which-key's own reserved-height slot is suppressed when the bottom panel is visi
 
 Content protocol: `render(grid)`, `feed_key(key) -> bool`.  Optional `title: str` is shown in the tab bar (defaults to registration name).
 
-The tab bar (row 0) shows all tabs except the hidden "keys" tab.  A separator occupies row 1.  The active tab body fills the remaining rows.  Mouse clicks on the tab bar switch tabs.
+The tab bar (row 0) shows all tabs except the hidden "keys" tab.  A separator occupies row 1.  The active tab body fills the remaining rows.  Mouse clicks on the tab bar switch tabs; clicks in the body are forwarded to the active tab's `click(col, row)` when defined (e.g. `LogOutputTab` moves its cursor to the clicked line).
 
 #### Built-in tabs
 

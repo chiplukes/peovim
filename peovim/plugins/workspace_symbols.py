@@ -43,6 +43,9 @@ class _WorkspaceSymbolsSidebarPanel:
         self._tree.feed_key(key)
         return True
 
+    def click(self, row: int, col: int) -> bool:
+        return self._tree.click(row, col)
+
     def on_focus(self) -> None:
         self._tree.focused = True
 

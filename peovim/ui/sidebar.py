@@ -69,6 +69,9 @@ class TreeSidebarPanel:
         self.tree.feed_key(key)
         return True
 
+    def click(self, row: int, col: int) -> bool:
+        return self.tree.click(row, col)
+
     def cursor_row(self, panel_height: int) -> int | None:
         return self.tree.cursor_row(panel_height)
 

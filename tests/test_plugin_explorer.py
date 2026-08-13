@@ -276,6 +276,48 @@ class TestExplorerPlugin:
         assert "r-en" in text
         assert "d-el" in text
 
+    def test_click_on_directory_expands_it(self, tmp_path):
+        (tmp_path / "subdir").mkdir()
+        (tmp_path / "file.py").write_text("")
+        api = _make_api()
+        api.find_root = lambda markers=None: tmp_path
+        controller = _ExplorerController(api)
+        controller.toggle()
+        panel = controller._panel
+        assert panel is not None
+
+        # Rows: 0 = hint, 1 = tree title, 2 = "..", 3 = first directory
+        assert panel.click(3, 0)
+
+        dir_node = next(n for n in panel.tree._visible_nodes() if n[0].label == "subdir")[0]
+        assert dir_node.expanded
+
+    def test_click_on_file_opens_buffer(self, tmp_path):
+        test_file = tmp_path / "open_me.py"
+        test_file.write_text("# content\n")
+        api = _make_api()
+        api.find_root = lambda markers=None: tmp_path
+        controller = _ExplorerController(api)
+        controller.toggle()
+        panel = controller._panel
+        assert panel is not None
+
+        # Rows: 0 = hint, 1 = tree title, 2 = "..", 3 = the only file
+        assert panel.click(3, 0)
+
+        assert api._workspace.active_window.document.path == test_file
+
+    def test_click_on_hint_row_is_consumed_without_action(self, tmp_path):
+        api = _make_api()
+        api.find_root = lambda markers=None: tmp_path
+        controller = _ExplorerController(api)
+        controller.toggle()
+        panel = controller._panel
+        assert panel is not None
+
+        assert panel.click(0, 0)
+        assert panel.tree._selected_idx == 0
+
 
 class TestExplorerCommands:
     def test_toggle_opens_and_hides_persistent_sidebar(self, tmp_path):

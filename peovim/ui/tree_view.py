@@ -219,6 +219,33 @@ class TreeView:  # cm:e3f1b4
         self._selected_idx = max(0, min(self._selected_idx, len(visible) - 1))
 
     # ------------------------------------------------------------------
+    # Mouse
+    # ------------------------------------------------------------------
+
+    def click(self, row: int, col: int) -> bool:
+        """Handle a click at (row, col) relative to the rendered grid.
+
+        Selects the clicked node, then expands/collapses it when it has
+        children or invokes the on_select callback otherwise (same semantics
+        as pressing <CR> on the node).  Returns True when the click landed
+        on a visible node.
+        """
+        start_row = 1 if self._title else 0
+        if row < start_row:
+            return False
+        visible = self._visible_nodes()
+        vis_idx = row - start_row + self._scroll_top
+        if vis_idx < 0 or vis_idx >= len(visible):
+            return False
+        self._selected_idx = vis_idx
+        node, _depth = visible[vis_idx]
+        if node.has_children():
+            self.toggle(node)
+        elif self._on_select is not None:
+            self._on_select(node)
+        return True
+
+    # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
 

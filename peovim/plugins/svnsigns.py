@@ -271,6 +271,18 @@ class _SvnStatusPanel:
         self._tree.feed_key(key)
         return True
 
+    def click(self, row: int, col: int) -> bool:
+        # The tree renders without its title row, so rows map directly.
+        visible = self._tree._visible_nodes()
+        vis_idx = row + self._tree._scroll_top
+        if vis_idx < 0 or vis_idx >= len(visible):
+            return False
+        self._tree._selected_idx = vis_idx
+        node, _depth = visible[vis_idx]
+        if node.value is not None:
+            self._activate(node.value, diff=True)
+        return True
+
     def on_focus(self) -> None:
         self._sidebar_focused = True  # type: ignore[attr-defined]
 

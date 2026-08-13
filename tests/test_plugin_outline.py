@@ -127,6 +127,54 @@ class TestOutlinePlugin:
         assert opened == [(Path("/tmp/sample.py"), 2, 3)]
         assert blurred == [True]
 
+    def test_click_on_symbol_jumps_and_parent_row_toggles(self, monkeypatch):
+        api = _make_api()
+        doc_path = str(api._workspace.active_window.document.path)
+        api.lsp = SimpleNamespace(
+            document_symbol_tree=lambda cb: cb(
+                [
+                    {
+                        "name": "Outer",
+                        "kind": "class",
+                        "detail": "",
+                        "path": doc_path,
+                        "line": 0,
+                        "col": 0,
+                        "end_line": 2,
+                        "end_col": 0,
+                        "children": [
+                            {
+                                "name": "inner",
+                                "kind": "method",
+                                "detail": "Outer",
+                                "path": doc_path,
+                                "line": 1,
+                                "col": 4,
+                                "end_line": 2,
+                                "end_col": 0,
+                                "children": [],
+                            }
+                        ],
+                    }
+                ]
+            )
+        )
+
+        setup(api)
+        panel = api.ui.get_sidebar_panel("outline")
+        assert isinstance(panel, _OutlineSidebarPanel)
+        panel.refresh()
+        jumped: list[tuple[int, int]] = []
+        monkeypatch.setattr(api, "goto_location", lambda path, line=0, col=0: jumped.append((line, col)))
+        monkeypatch.setattr(api.ui, "blur_sidebar", lambda: None)
+
+        # row 0 = title, row 1 = Outer (expanded), row 2 = inner
+        assert panel.click(2, 0)
+        assert jumped == [(1, 4)]
+
+        assert panel.click(1, 0)
+        assert not panel._tree._roots[0].expanded
+
     def test_cursor_move_in_outline_scrolls_editor_without_blurring(self, monkeypatch):
         api = _make_api()
         panel = _OutlineSidebarPanel(api)

@@ -279,6 +279,7 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
         # Reserve bottom rows for help text
         help_rows = len(self._HELP_LINES)
         tree_height = max(1, grid.height - help_rows - 1)  # -1 for separator
+        self._tree_height = tree_height
         # Render tree into a sub-grid slice
         sub = _SubGrid(grid, tree_height)
         self._tree._width = grid.width  # noqa: SLF001
@@ -299,6 +300,12 @@ class VerilogHierarchyPanel:  # cm:8c1e4a
     def feed_key(self, key: str) -> bool:
         self._tree.feed_key(key)
         return True
+
+    def click(self, row: int, col: int) -> bool:
+        tree_height = getattr(self, "_tree_height", None)
+        if tree_height is None or row >= tree_height:
+            return True
+        return self._tree.click(row, col)
 
     def cursor_row(self, panel_height: int) -> int | None:
         tree_height = max(1, panel_height - len(self._HELP_LINES) - 1)

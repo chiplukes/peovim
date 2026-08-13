@@ -266,6 +266,24 @@ class TestMarkersController:
         assert prompts == [(":", "MarkerText todo")]
         assert controller.store.markers("default")[0]["annotation"] == "revisit"
 
+    def test_panel_click_toggles_marker_context_and_group(self, tmp_path, monkeypatch):
+        api = _make_api(tmp_path, monkeypatch)
+        controller = _MarkersController(api)
+        controller.store.add_marker("default", str(api.active_buffer().path), 1, 0)
+        panel = controller._get_panel()
+        panel.refresh()
+        group = panel.tree._roots[0]
+        marker = group.get_children()[0]
+        assert group.expanded
+
+        # Rows: 0 = hint, 1 = tree title, 2 = group node, 3 = marker node
+        assert panel.click(3, 0)
+        assert panel.tree.selected_node is marker
+        assert marker.expanded  # marker has context children → click expands
+
+        assert panel.click(2, 0)
+        assert not group.expanded
+
     def test_cursor_move_same_file_scrolls_editor_without_blurring(self, tmp_path, monkeypatch):
         api = _make_api(tmp_path, monkeypatch)
         controller = _MarkersController(api)

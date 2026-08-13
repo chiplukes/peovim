@@ -443,6 +443,17 @@ class LogOutputTab:
             return True
         return False
 
+    def click(self, col: int, row: int) -> bool:
+        """Move the cursor to the clicked log line, disabling auto-scroll."""
+        if not self._lines:
+            return True
+        idx = self._scroll + row
+        if 0 <= idx < len(self._lines):
+            self._auto_scroll = False
+            self._cursor = idx
+            return True
+        return False
+
     def render(self, grid: CellGrid) -> None:
         if grid.height == 0 or grid.width == 0:
             return

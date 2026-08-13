@@ -275,6 +275,39 @@ class TestLogOutputTab:
         tab.feed_key("c")
         assert len(tab._lines) == 0
 
+    def test_click_moves_cursor_to_line_and_disables_auto_scroll(self):
+        tab = LogOutputTab()
+        for i in range(20):
+            tab.add_line(f"line {i}", 20)
+        tab._scroll = 5
+        tab._auto_scroll = True
+
+        assert tab.click(0, 3)
+
+        assert tab._cursor == 8
+        assert tab._auto_scroll is False
+
+    def test_click_below_last_line_is_ignored(self):
+        tab = LogOutputTab()
+        tab.add_line("only", 20)
+        tab._scroll = 0
+
+        assert not tab.click(0, 4)
+        assert tab._cursor == 0
+
+    def test_host_click_body_forwards_to_log_tab(self):
+        bp = BottomPanelHost()
+        tab = LogOutputTab()
+        for i in range(10):
+            tab.add_line(f"line {i}", 20)
+        tab._scroll = 0
+        tab._auto_scroll = False
+        bp.show_tab("output", tab, focus=True)
+
+        # row 0 = tab bar, row 1 = separator, row 2 = first body line
+        assert bp.click(0, 4)
+        assert tab._cursor == 2
+
     def test_visual_mode_start_and_cancel(self):
         tab = LogOutputTab()
         for i in range(5):
