@@ -4,6 +4,17 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from peovim.api.editor import EditorAPI
+from peovim.commands.builtin import register_builtins
+from peovim.commands.registry import CommandRegistry
+from peovim.core.document import Document
+from peovim.core.editor_state import EditorState
+from peovim.core.jumplist import JumpList
+from peovim.core.registers import RegisterStore
+from peovim.core.window import Window
+from peovim.core.workspace import Workspace
+from peovim.modal.dispatcher import ActionDispatcher
+from peovim.modal.engine import ModalEngine
 from peovim.plugins.commentary import _comment_str, toggle_line_comment
 
 
@@ -19,6 +30,27 @@ def _make_buf(lines: list[str], filetype: str = "python") -> MagicMock:
 
     buf.replace.side_effect = _replace
     return buf, _lines
+
+
+def _make_api(content: str) -> EditorAPI:
+    doc = Document()
+    doc.load_string(content)
+    window = Window(doc)
+    workspace = Workspace(window)
+    editor_state = EditorState()
+    command_registry = CommandRegistry()
+    register_builtins(command_registry)
+    engine = ModalEngine()
+    dispatcher = ActionDispatcher(
+        engine,
+        window,
+        RegisterStore(),
+        jumplist=JumpList(),
+        editor_state=editor_state,
+        workspace=workspace,
+    )
+    dispatcher.set_command_registry(command_registry)
+    return EditorAPI(workspace, engine, dispatcher, editor_state, command_registry)
 
 
 class TestCommentStr:
@@ -102,3 +134,15 @@ class TestSetup:
         assert api.keymap.vmap.called
         keys = [c.args[0] for c in api.keymap.vmap.call_args_list]
         assert "gc" in keys
+
+    def test_visual_gc_toggles_the_selected_lines(self):
+        from peovim.plugins.commentary import setup
+
+        api = _make_api("one\ntwo\nthree")
+        setup(api)
+        api._engine.set_context_provider(lambda: api._workspace.active_window)
+
+        for key in ("v", "j", "j", "g", "c"):
+            api._dispatcher.dispatch(api._engine.feed_key(key))
+
+        assert api.active_buffer().get_lines() == ["# one", "# two", "# three"]
