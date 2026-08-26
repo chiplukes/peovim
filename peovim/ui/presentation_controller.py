@@ -27,6 +27,12 @@ class OverlayPresentationController:
             host._invalidate("full")
             return True
 
+        for interceptor in list(getattr(host, "_key_interceptors", ())):
+            if getattr(interceptor, "is_active", False):
+                interceptor.feed_key(key)
+                host._invalidate("full")
+                return True
+
         if (
             host._float_manager is not None
             and getattr(host._float_manager, "has_focused", False)

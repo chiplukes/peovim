@@ -11,7 +11,7 @@ import os
 import pathlib
 import shutil
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from peovim.git import color_for_status_entry, marker_for_status_entry
 from peovim.ui.cell_grid import CellGrid
@@ -36,6 +36,9 @@ class _ExplorerStatusAggregate:
     deleted: bool = False
     untracked: bool = False
     mixed: bool = False
+
+
+_WINDOW_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 class _ExplorerSidebarPanel:
@@ -88,6 +91,7 @@ class _ExplorerController:  # cm:1f4c6a
         self._clipboard_mode: str | None = None
         self._pending_copy_source: pathlib.Path | None = None
         self._pending_copy_destination_dir: pathlib.Path | None = None
+        self._window_chooser: object | None = None
 
     def toggle(self) -> None:
         self._root = self._api.find_root() or pathlib.Path.cwd()
@@ -233,8 +237,34 @@ class _ExplorerController:  # cm:1f4c6a
             self.refresh(selected_path=old_root)
             return
         if path.is_file():
+            windows = self._api.list_tab_windows()
+            if 1 < len(windows) <= len(_WINDOW_LABELS):
+                self._start_window_chooser(path, windows)
+                return
             self._api.open_buffer(path)
             self._api.ui.blur_sidebar()
+
+    def _start_window_chooser(self, path: pathlib.Path, windows: list) -> None:
+        from peovim.ui.target_chooser import ChooserTarget, TargetChooser
+
+        def _make_activate(win: object):
+            def _activate() -> None:
+                self._api.activate_window(win)
+                self._api.open_buffer(path)
+                self._api.ui.blur_sidebar()
+
+            return _activate
+
+        targets = [
+            ChooserTarget(name=path.name, rect=self._safe_rect(win), activate=_make_activate(win)) for win in windows
+        ]
+        self._window_chooser = TargetChooser(self._api, targets, hint_title=f"Open {path.name}")
+
+    def _safe_rect(self, window: object) -> Any:
+        try:
+            return self._api.window_rect(window)
+        except Exception:
+            return None
 
     def _paste_into(self, target: pathlib.Path) -> bool:
         source = self._clipboard_path

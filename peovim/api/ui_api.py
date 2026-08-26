@@ -53,7 +53,7 @@ class UIAPI:  # cm:3c9d4f
 
     def open_float(
         self,
-        content: str | list[str],
+        content: str | list[Any],
         *,
         anchor: Any = None,
         width: int = 60,
@@ -64,7 +64,11 @@ class UIAPI:  # cm:3c9d4f
         z_order: int = 0,
         on_close: Any = None,
     ) -> Any:
-        """Open a floating window. Returns a FloatHandle."""
+        """Open a floating window. Returns a FloatHandle.
+
+        ``content`` may be a plain string, a list of lines (strings), or a list
+        of styled lines where each line is a list of ``(text, Style)`` segments.
+        """
         if self._float_manager is None:
             return None
         return self._float_manager.open_float(

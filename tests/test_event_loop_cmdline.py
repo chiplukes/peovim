@@ -1212,3 +1212,48 @@ def test_render_window_content_uses_direct_sequential_merge_when_parallel_unavai
     )
 
     assert not executor_called, "executor should not run for sequential path"
+
+
+def test_handle_overlay_key_routes_to_pushed_interceptor() -> None:
+    """A transient key interceptor registered on the event loop receives keys
+    before the modal engine (and before sidebar/picker routing)."""
+    event_loop, _backend, _doc, _window = _make_event_loop()
+
+    received: list[str] = []
+
+    class _SpyInterceptor:
+        is_active = True
+
+        def feed_key(self, key: str) -> bool:
+            received.append(key)
+            return True
+
+    spy = _SpyInterceptor()
+    event_loop.attach_key_interceptor(spy)
+
+    consumed = event_loop._handle_overlay_key("a")
+
+    assert consumed is True
+    assert received == ["a"]
+
+    event_loop.detach_key_interceptor(spy)
+    assert event_loop._key_interceptors == []
+
+
+def test_handle_overlay_key_skips_inactive_interceptor() -> None:
+    """An inactive interceptor is ignored and the key is not consumed by it."""
+    event_loop, _backend, _doc, _window = _make_event_loop()
+
+    class _Inactive:
+        is_active = False
+
+        def feed_key(self, key: str) -> bool:
+            raise AssertionError("inactive interceptor must not be fed")
+
+    event_loop.attach_key_interceptor(_Inactive())
+
+    # No flash, no focused float, no focused sidebar -> nothing else consumes
+    # a bare 'a', so the overlay handler returns False.
+    consumed = event_loop._handle_overlay_key("a")
+
+    assert consumed is False

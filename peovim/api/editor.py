@@ -144,6 +144,43 @@ class EditorAPI:  # cm:6d5a2c
         """Returns the registered flash plugin, or None if not loaded."""
         return self._flash_plugin_ref
 
+    def push_key_interceptor(self, interceptor: Any) -> None:
+        """Register a transient object that intercepts keys before the modal engine.
+
+        The interceptor must expose ``is_active`` (bool) and ``feed_key(key) -> bool``.
+        It receives the next key(s) until it deactivates itself and is popped via
+        :meth:`pop_key_interceptor`. No-op when the event loop is not yet attached.
+        """
+        if self._event_loop is not None:
+            self._event_loop.attach_key_interceptor(interceptor)
+
+    def pop_key_interceptor(self, interceptor: Any) -> None:
+        """Remove a previously pushed transient key interceptor."""
+        if self._event_loop is not None:
+            self._event_loop.detach_key_interceptor(interceptor)
+
+    def window_rect(self, window: Any) -> Any:
+        """Return the last-computed screen ``Rect`` for ``window``, or None.
+
+        ``window`` may be a ``Window`` or a ``WindowAPI`` wrapper. Reads the
+        most recent frame layout, so it is only valid after the first render.
+        """
+        if self._event_loop is None:
+            return None
+        return self._event_loop.window_rect(window)
+
+    def sidebar_rect(self) -> Any:
+        """Return the last-computed sidebar screen ``Rect``, or None if hidden."""
+        if self._event_loop is None:
+            return None
+        return self._event_loop.sidebar_rect()
+
+    def bottom_panel_rect(self) -> Any:
+        """Return the last-computed bottom-panel screen ``Rect``, or None if hidden."""
+        if self._event_loop is None:
+            return None
+        return self._event_loop.bottom_panel_rect()
+
     def set_project_root(self, root: pathlib.Path) -> None:
         """Set the project root explicitly (e.g. when opened as a directory)."""
         self._project_root = root

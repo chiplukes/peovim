@@ -453,6 +453,115 @@ class TestEditorAPI:
 
         assert api._editor_state.decorations.get_for_namespace(win.win_id, "window:test") == []
 
+    def test_push_and_pop_key_interceptor_forward_to_event_loop(self):
+        from types import SimpleNamespace
+
+        api = _make_api()
+        interceptors: list = []
+        api._event_loop = SimpleNamespace(
+            attach_key_interceptor=interceptors.append,
+            detach_key_interceptor=lambda i: interceptors.remove(i) if i in interceptors else None,
+        )
+
+        class _Spy:
+            is_active = True
+
+            def feed_key(self, key):
+                return True
+
+        spy = _Spy()
+        api.push_key_interceptor(spy)
+
+        assert interceptors == [spy]
+
+        api.pop_key_interceptor(spy)
+
+        assert interceptors == []
+
+    def test_push_key_interceptor_is_noop_without_event_loop(self):
+        api = _make_api()
+
+        # No event loop attached yet — must not raise.
+        api.push_key_interceptor(object())
+        api.pop_key_interceptor(object())
+
+    def test_window_rect_returns_layout_rect_for_window(self):
+        from types import SimpleNamespace
+
+        from peovim.core.workspace import WindowLeaf
+        from peovim.ui.layout import Rect
+
+        api = _make_api()
+        win = api.active_window()
+        target = win._window
+        layout = {WindowLeaf(target): Rect(5, 6, 40, 10)}
+        api._event_loop = SimpleNamespace(
+            _current_layout=layout,
+            window_rect=lambda w: next(
+                (r for leaf, r in layout.items() if leaf.window is getattr(w, "_window", w)), None
+            ),
+        )
+
+        rect = api.window_rect(win)
+
+        assert rect == Rect(5, 6, 40, 10)
+
+    def test_window_rect_is_none_without_event_loop(self):
+        api = _make_api()
+
+        assert api.window_rect(api.active_window()) is None
+
+    def test_sidebar_and_bottom_panel_rect_forward_to_event_loop(self):
+        from types import SimpleNamespace
+
+        from peovim.ui.layout import Rect
+
+        api = _make_api()
+        api._event_loop = SimpleNamespace(
+            sidebar_rect=lambda: Rect(0, 0, 30, 24),
+            bottom_panel_rect=lambda: Rect(0, 18, 80, 6),
+        )
+
+        assert api.sidebar_rect() == Rect(0, 0, 30, 24)
+        assert api.bottom_panel_rect() == Rect(0, 18, 80, 6)
+
+    def test_sidebar_and_bottom_panel_rect_none_without_event_loop(self):
+        api = _make_api()
+
+        assert api.sidebar_rect() is None
+        assert api.bottom_panel_rect() is None
+
+    def test_win_goto_pushes_target_chooser_over_windows_and_bottom_panel(self):
+        from types import SimpleNamespace
+
+        from peovim.plugins import editor_utils
+        from peovim.ui.layout import Rect
+
+        api = _make_api()
+        api.options.set("leader", " ")
+        editor_utils.setup(api)
+        interceptors: list = []
+        api._event_loop = SimpleNamespace(
+            _key_interceptors=interceptors,
+            attach_key_interceptor=interceptors.append,
+            detach_key_interceptor=lambda i: interceptors.remove(i) if i in interceptors else None,
+            window_rect=lambda w: Rect(0, 0, 40, 10),
+            sidebar_rect=lambda: None,
+            bottom_panel_rect=lambda: Rect(0, 18, 80, 6),
+        )
+
+        assert api.keymap.invoke_plug("WinGoto")
+
+        assert len(interceptors) == 1
+        chooser = interceptors[0]
+        assert chooser.is_active
+
+        # Active-tab window (A) + bottom panel (B); no sidebar panels registered.
+        chooser.feed_key("A")
+
+        assert not chooser.is_active
+        assert interceptors == []
+
     def test_push_recent_file_updates_recent_files(self, tmp_path):
         api = _make_api()
         target = tmp_path / "recent.txt"

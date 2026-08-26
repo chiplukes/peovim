@@ -142,3 +142,40 @@ def setup(api: Any) -> None:
     api.keymap.nmap("<leader>wc", "<Plug>WinClose", desc="Close window")
     api.keymap.nmap("<leader>wf", "<Plug>WinOnly", desc="Focus (close others)")
     api.keymap.nmap("<leader>we", "<Plug>WinEqualize", desc="Equalize windows")
+
+    # ------------------------------------------------------------------
+    # <leader>wg — Goto window/sidebar/bottom panel chooser
+    # ------------------------------------------------------------------
+    def _win_goto() -> None:
+        from peovim.ui.target_chooser import ChooserTarget, TargetChooser
+
+        targets: list[ChooserTarget] = []
+        for win in api.list_tab_windows():
+
+            def _activate(win=win) -> None:
+                api.activate_window(win)
+
+            targets.append(ChooserTarget(name="window", rect=api.window_rect(win), activate=_activate))
+        try:
+            panels = api.ui.list_sidebar_panels()
+        except Exception:
+            panels = []
+        if panels:
+
+            def _goto_sidebar() -> None:
+                api.ui.show_active_sidebar_panel(focus=True)
+
+            targets.append(ChooserTarget(name="sidebar", rect=api.sidebar_rect(), activate=_goto_sidebar))
+
+        def _goto_bottom() -> None:
+            if api.ui.is_bottom_panel_visible():
+                api.ui.focus_bottom_panel()
+            else:
+                api.ui.toggle_bottom_panel(focus=True)
+
+        targets.append(ChooserTarget(name="bottom panel", rect=api.bottom_panel_rect(), activate=_goto_bottom))
+
+        TargetChooser(api, targets, hint_title="Go to")
+
+    api.keymap.nmap("<Plug>WinGoto", _win_goto, desc="Window: goto window/sidebar/bottom panel")
+    api.keymap.nmap("<leader>wg", "<Plug>WinGoto", desc="Goto window or panel")

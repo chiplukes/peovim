@@ -138,6 +138,7 @@ class EventLoop:  # cm:e4d6b5
         self._current_sidebar_rect: Rect | None = None
         self._current_bottom_panel_rect: Rect | None = None
         self._flash: Any | None = None
+        self._key_interceptors: list[Any] = []
         self._pending_rename: Any = None
         self._cmdline_controller = CommandLineController(self)
         self._cursor_controller = TerminalCursorController(self)
@@ -194,6 +195,40 @@ class EventLoop:  # cm:e4d6b5
     def attach_flash(self, plugin: Any) -> None:
         """Wire the flash plugin after it is loaded."""
         self._flash = plugin
+
+    def attach_key_interceptor(self, interceptor: Any) -> None:
+        """Register a transient object that intercepts keys before the modal engine.
+
+        The interceptor must expose ``is_active`` (bool) and ``feed_key(key) -> bool``.
+        It is consulted after the flash plugin in ``handle_overlay_key``.
+        """
+        self._key_interceptors.append(interceptor)
+
+    def detach_key_interceptor(self, interceptor: Any) -> None:
+        """Remove a previously registered transient key interceptor."""
+        with contextlib.suppress(ValueError):
+            self._key_interceptors.remove(interceptor)
+
+    def window_rect(self, window: Any) -> Rect | None:
+        """Return the last-computed screen ``Rect`` for ``window``, or None.
+
+        ``window`` may be a ``Window`` or a ``WindowAPI`` wrapper. Looks up the
+        most recent layout (``_current_layout``), so call after at least one
+        rendered frame; returns None if the window is not laid out yet.
+        """
+        target = getattr(window, "_window", window)
+        for leaf, rect in self._current_layout.items():
+            if getattr(leaf, "window", None) is target:
+                return rect
+        return None
+
+    def sidebar_rect(self) -> Rect | None:
+        """Return the last-computed sidebar screen ``Rect``, or None if hidden."""
+        return self._current_sidebar_rect
+
+    def bottom_panel_rect(self) -> Rect | None:
+        """Return the last-computed bottom-panel screen ``Rect``, or None if hidden."""
+        return self._current_bottom_panel_rect
 
     def attach_ui(self, ui: Any, binding_registry: Any) -> None:
         """Wire UI state from UIAPI and the shared BindingRegistry."""

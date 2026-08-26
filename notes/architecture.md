@@ -903,7 +903,11 @@ sub-controllers rather than implementing everything inline:
 - **`InputController`** — reads raw events from the backend, normalises keys,
   feeds the modal engine
 - **`OverlayPresentationController`** — intercepts keys before the modal engine
-  for floats, picker, command line, sidebar, and completion widgets
+  for floats, picker, command line, sidebar, and completion widgets. It also
+  routes to a stack of transient key interceptors (`event_loop._key_interceptors`)
+  consulted right after the flash plugin; each exposes `is_active` and
+  `feed_key(key)`. Plugins push/pop via `api.push_key_interceptor()` /
+  `api.pop_key_interceptor()` (used by the explorer window chooser).
 - **`FrameController`** — computes per-frame layout (sidebar width, bottom panel
   height, window rects, status bar)
 - **`WindowRenderController`** — manages per-window `CellGrid` reuse, submits

@@ -224,6 +224,19 @@ editor.add_window_overlay(window: Window, namespace: str, decoration: Decoration
 editor.clear_window_namespace(window: Window, namespace: str) -> None
 editor.set_compare_status(status: dict | None) -> None
 
+# Transient key interceptors — receive the next key(s) before the modal engine.
+# The interceptor exposes is_active (bool) and feed_key(key) -> bool. Pushed
+# interceptors are consulted after the flash plugin in handle_overlay_key.
+# Used by the explorer window chooser; pop when the operation resolves.
+editor.push_key_interceptor(interceptor) -> None
+editor.pop_key_interceptor(interceptor) -> None
+
+# Last-computed screen rect for a window (after the first render), or None.
+# Reads the per-frame layout; lets plugins position floats over a window.
+editor.window_rect(window: Window) -> Rect | None
+editor.sidebar_rect() -> Rect | None       # sidebar screen rect, or None if hidden
+editor.bottom_panel_rect() -> Rect | None   # bottom-panel screen rect, or None if hidden
+
 # Register / window action helpers
 editor.set_register(name: str, text: str, kind: str = "char") -> None
 editor.get_register(name: str) -> tuple[str, str]

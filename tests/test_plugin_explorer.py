@@ -49,8 +49,13 @@ def _make_api() -> EditorAPI:
     dispatcher = ActionDispatcher(engine, window, registers, editor_state=editor_state)
     dispatcher._command_registry = command_registry
     api = EditorAPI(workspace, engine, dispatcher, editor_state, command_registry)
+    key_interceptors: list = []
     api._event_loop = SimpleNamespace(
-        _cmdline=SimpleNamespace(enter=lambda *args, **kwargs: None), _invalidate_cmdline=lambda: None
+        _cmdline=SimpleNamespace(enter=lambda *args, **kwargs: None),
+        _invalidate_cmdline=lambda: None,
+        _key_interceptors=key_interceptors,
+        attach_key_interceptor=key_interceptors.append,
+        detach_key_interceptor=lambda i: key_interceptors.remove(i) if i in key_interceptors else None,
     )
     return api
 
@@ -317,6 +322,58 @@ class TestExplorerPlugin:
 
         assert panel.click(0, 0)
         assert panel.tree._selected_idx == 0
+
+
+class TestExplorerWindowChooser:
+    """Integration: selecting a file from the explorer with >1 split starts a
+    TargetChooser (unit-tested in tests/test_target_chooser.py)."""
+
+    def test_open_selected_starts_chooser_with_multiple_windows(self, tmp_path):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        api.find_root = lambda markers=None: tmp_path
+        api._workspace.active_tab.split_vertical()
+        assert len(api.list_tab_windows()) == 2
+
+        target = tmp_path / "open_me.py"
+        target.write_text("# content\n")
+        controller = _ExplorerController(api)
+        controller._root = tmp_path
+        first_window = api.list_tab_windows()[0]
+
+        controller._open_selected(TreeNode(label="open_me.py", value=str(target)))
+
+        assert controller._window_chooser is not None
+        assert controller._window_chooser.is_active
+        assert api._event_loop._key_interceptors == [controller._window_chooser]
+        # Not opened yet; chooser is waiting for the target window letter.
+        assert api.active_buffer().path != target.resolve()
+
+        controller._window_chooser.feed_key("A")
+
+        assert not controller._window_chooser.is_active
+        assert api._event_loop._key_interceptors == []
+        assert api.active_buffer().path == target.resolve()
+        assert api.active_window().win_id == first_window.win_id
+
+    def test_open_selected_opens_directly_with_single_window(self, tmp_path):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        api.find_root = lambda markers=None: tmp_path
+        assert len(api.list_tab_windows()) == 1
+
+        target = tmp_path / "solo.py"
+        target.write_text("# content\n")
+        controller = _ExplorerController(api)
+        controller._root = tmp_path
+
+        controller._open_selected(TreeNode(label="solo.py", value=str(target)))
+
+        assert controller._window_chooser is None
+        assert api.active_buffer().path == target.resolve()
+        assert api._event_loop._key_interceptors == []
 
 
 class TestExplorerCommands:

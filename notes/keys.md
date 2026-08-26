@@ -124,6 +124,13 @@ keymap.nmap("<leader>sg", "<Plug>PickerLiveGrep",    desc="Live grep")
 | `<leader>wc` | `WinClose` | Close current window |
 | `<leader>wf` | `WinOnly` | Close all other windows |
 | `<leader>we` | `WinEqualize` | Equalize all window sizes (reset to 50/50) |
+| `<leader>wg` | `WinGoto` | Goto chooser: lettered badges on each window + the sidebar + the bottom panel; press the matching letter (any case) to focus it |
+
+`<leader>wg` lists every editor window in the active tab, the sidebar (if it has
+panels), and the bottom panel — each gets a centered badge (A, B, C, …). Press
+the matching letter (either case) to focus that target; `Esc` / `<C-c>` (or any
+non-label key) cancels. Hidden sidebar/bottom panel targets still work: selecting
+one shows + focuses it.
 
 ---
 
@@ -381,8 +388,16 @@ Requires `peovim.plugins.explorer`.
 | `p` | — | Explorer focused | Paste into selected directory |
 | `R` | — | Explorer focused | Refresh tree |
 | `<CR>` | — | Explorer focused | Open selected file |
+| `A`–`Z` (any case) | — | Explorer focused, >1 split | Open selected file in the window marked with that letter's badge |
+| `Esc` / `<C-c>` | — | Explorer window chooser | Cancel and keep the explorer focused |
 
 Git-backed explorer shows `+` (new), `~` (modified), `!` (deleted) prefixes on entries.
+
+When more than one split is open and you open a file from the explorer, the
+target window is ambiguous, so each editor window gets a centered badge float
+(`A`, `B`, `C`, …) and a single keypress — either case — picks the window to
+open into. File pickers (`f/`, `fj`) are unambiguous — they always open in the
+active window.
 
 ---
 

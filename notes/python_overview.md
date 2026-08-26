@@ -164,6 +164,7 @@ Nothing outside `ui/` imports from here directly (plugins use `api.ui`).
 | `decorations.py` | Decoration types: `HighlightRegion`, `VirtualText`, `VirtualLine`, `Sign`, `InlayHint`, `GhostText`, `OverlayChar`, `CodeLens`, `Conceal` |
 | `markdown.py` | `render_markdown(text) -> list[str]` — strips markdown for hover float display |
 | `float_manager.py` | `FloatManager` — positioned floats; z-ordering; focused float keyboard routing; `CursorRelative`/`Centered`/`Absolute` anchors |
+| `target_chooser.py` | `TargetChooser` + `ChooserTarget` — lettered-badge chooser (A/B/C) over arbitrary targets; pushed as a transient key interceptor; used by the explorer file-open chooser and `<leader>wg` goto |
 | `status_bar.py` | Mode indicator, filename, dirty flag, cursor pos, options display |
 | `command_line.py` | `:` input and `/`/`?` search with history recall (`↑`/`↓`) |
 | `picker.py` | `PickerWidget` — fuzzy filter (rapidfuzz), preview pane, multi-select; intercepts all keys when open |
