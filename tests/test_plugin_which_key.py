@@ -177,6 +177,20 @@ class TestShowBindings:
         assert "f" in next_keys
         assert "c" not in next_keys
 
+    def test_same_key_scoped_variants_deduped_to_most_specific_leaf(self):
+        b1 = _binding("<leader>wc", "Close any panel")
+        b1.scope = "sidebar"
+        b2 = _binding("<leader>wc", "Close explorer")
+        b2.scope = "explorer"
+        api = _make_api([b1, b2])
+        api.ui.focused_sidebar_panel_name.return_value = "explorer"
+
+        _show_bindings(api, _LEADER + "w", "normal")
+
+        pairs = api.ui.show_which_key.call_args.args[0]
+        assert ("c", "Close explorer") in pairs
+        assert not any(k == "c" and "bindings" in v for k, v in pairs)
+
 
 class TestSetup:
     def test_registers_which_key_command(self):

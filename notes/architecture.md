@@ -559,7 +559,7 @@ Sidebar navigation keys are registered as `<Plug>` mappings in `EditorAPI._regis
 
 Users can rebind any of these via `keymap.nmap(key, "<Plug>SidebarFocusLeft")` etc.
 
-Key dispatch is handled in `presentation_controller.handle_sidebar_navigation_key`, which runs **before** the modal engine. It calls `BindingRegistry.find_keys_for_plug()` to resolve the current binding dynamically, so remapped keys are honoured automatically. `SidebarHost._get_footer_lines()` uses the same lookup to display live bindings in the panel footer.
+Key dispatch is handled in `presentation_controller.handle_sidebar_navigation_key`, which runs **before** the modal engine. It calls `BindingRegistry.find_keys_for_plug()` to resolve the current binding dynamically, so remapped keys are honoured automatically. `SidebarHost._get_footer_lines()` renders a single-line hint (`<leader> keys    <A-l> back`); which-key is the discoverability layer for the rest.
 
 When the sidebar is visible but not focused, only `SidebarFocusLeft` is checked; other nav keys pass through to the engine. When the sidebar is focused, `SidebarFocusRight/NextPanel/PrevPanel` are checked first, then unmatched keys are forwarded to the active panel's `feed_key`.
 
@@ -567,7 +567,7 @@ While the sidebar is focused, `presentation_controller._sidebar_should_route_to_
 
 #### Panel-scoped bindings
 
-`BindingRegistry.register` accepts a `scope` argument (`KeymapAPI.nmap(..., scope=...)`). `BindingInfo` carries `scope`; the registry wraps the binding's action with `_scope_active(scope)`, which consults an injected resolver — wired in `EditorAPI.__init__` to `ui.focused_sidebar_panel_name()` — so a scoped binding is inert unless its context is active. Tiers: `""` (global), `"editor"` (no sidebar focused), `"sidebar"` (any focused panel), and a panel name. `which_key._show_bindings` applies the same filter (`_binding_visible`) so scoped bindings only appear in which-key while relevant; e.g. the explorer's `<leader>f` "Explorer" file-operation group is registered with scope `"explorer"`. A separate `which_key_sidebar_groups` option (allowlist of leader prefixes) additionally hides global groups from which-key while a panel is focused.
+`BindingRegistry.register` accepts a `scope` argument (`KeymapAPI.nmap(..., scope=...)`). `BindingInfo` carries `scope`; the registry stores each (mode, keys) as a list of scope variants and registers a single dispatcher action on the engine trie (`_make_dispatcher`), which at fire time runs the most-specific active variant (`_scope_specificity`: panel > sidebar > editor > global). The resolver is wired in `EditorAPI.__init__` to `ui.focused_sidebar_panel_name()`. This lets the same key sequence mean different things per context — e.g. `<leader>wc` is "close window" (scope `"editor"`) in the editor and "close sidebar" (scope `"sidebar"`) on the sidebar. Registering a scoped variant supersedes any global (scope `""`) default for that key, so a user `nmap(..., scope="editor")` cleanly replaces a plugin's unscoped default. `which_key._show_bindings` filters by scope (`_binding_visible`) and collapses any remaining same-key variants to the most-specific one (`_dedupe_scoped`) so it renders a single named leaf, never an unnamed "+group". A separate `which_key_sidebar_groups` option (allowlist of leader prefixes) additionally hides global groups from which-key while a panel is focused.
 
 #### Mouse clicks
 

@@ -70,6 +70,7 @@ class BindingInfo:
 class _RegisteredBinding:
     mode: str
     keys: str
+    scope: str
     action_fn: Any
     noremap: bool
     engine_keys: str
@@ -92,7 +93,7 @@ class BindingRegistry:  # cm:8c3a1f
         self._group_defs: dict[str, str] = {}
         self._plug_registry: dict[str, int] = {}  # plug_name → callback_id
         self._plug_to_keys: dict[str, list[tuple[str, str]]] = {}  # plug_name → [(mode, keys)]
-        self._registered: dict[tuple[str, str], _RegisteredBinding] = {}
+        self._registered: dict[tuple[str, str], list[_RegisteredBinding]] = {}
         self._next_id: int = 0
         self._scope_resolver: Any = None
         self._subscribe_option_changes()
@@ -140,6 +141,29 @@ class BindingRegistry:  # cm:8c3a1f
             return active is None
         return active == scope
 
+    @staticmethod
+    def _scope_specificity(scope: str) -> int:
+        """More-specific scopes win: panel > sidebar > editor > global."""
+        if not scope:
+            return 0
+        if scope == "editor":
+            return 1
+        if scope == "sidebar":
+            return 2
+        return 3
+
+    def _make_dispatcher(self, variants: list[_RegisteredBinding]) -> Any:
+        """Build an action that runs the most-specific active scope variant."""
+        ordered = sorted(variants, key=lambda v: self._scope_specificity(v.scope), reverse=True)
+
+        def dispatcher(state: Any) -> list:
+            for v in ordered:
+                if self._scope_active(v.scope):
+                    return v.action_fn(state)
+            return []
+
+        return dispatcher
+
     def _subscribe_option_changes(self) -> None:
         es = getattr(self._dispatcher, "_editor_state", None)
         event_bus = getattr(es, "event_bus", None)
@@ -155,25 +179,24 @@ class BindingRegistry:  # cm:8c3a1f
         self._rebuild_groups()
 
     def _rebind_special_bindings(self) -> None:
-        for registered in self._registered.values():
+        for variants in list(self._registered.values()):
+            first = variants[0]
             if (
-                "<leader>" not in registered.keys
-                and "<Leader>" not in registered.keys
-                and "<localleader>" not in registered.keys
-                and "<LocalLeader>" not in registered.keys
+                "<leader>" not in first.keys
+                and "<Leader>" not in first.keys
+                and "<localleader>" not in first.keys
+                and "<LocalLeader>" not in first.keys
             ):
                 continue
-            engine_mode = self._mode_to_engine_mode(registered.mode)
+            engine_mode = self._mode_to_engine_mode(first.mode)
             if engine_mode is None:
                 continue
-            self._engine.remove_user_binding(engine_mode, registered.engine_keys)
-            registered.engine_keys = self._expand_special_keys(registered.keys)
-            self._engine.add_user_binding(
-                engine_mode,
-                registered.engine_keys,
-                registered.action_fn,
-                noremap=registered.noremap,
-            )
+            self._engine.remove_user_binding(engine_mode, first.engine_keys)
+            new_engine_keys = self._expand_special_keys(first.keys)
+            dispatcher = self._make_dispatcher(variants)
+            self._engine.add_user_binding(engine_mode, new_engine_keys, dispatcher, noremap=first.noremap)
+            for variant in variants:
+                variant.engine_keys = new_engine_keys
 
     def _rebuild_groups(self) -> None:
         self._groups = {}
@@ -241,35 +264,34 @@ class BindingRegistry:  # cm:8c3a1f
             def action_fn(state: Any, _tgt: str = target) -> list:  # type: ignore[misc]
                 return [RunNormalKeys(_tgt, remap=True)]
 
-        if scope:
-            base_action_fn = action_fn
-
-            def action_fn(state: Any, _base: Any = base_action_fn, _scope: str = scope) -> list:  # type: ignore[misc]
-                if not self._scope_active(_scope):
-                    return []
-                return _base(state)
-
         # <Plug> keys are registered verbatim (single token) — skip for engine
         if not keys.startswith("<Plug>"):
-            existing = self._registered.get((mode, keys))
-            if existing is not None:
-                self._engine.remove_user_binding(engine_mode, existing.engine_keys)
+            variants = self._registered.setdefault((mode, keys), [])
+            # Re-registering the same scope replaces the previous variant, and a
+            # scoped binding supersedes any global (scope="") default for the key.
+            variants[:] = [v for v in variants if v.scope != scope and not (scope and v.scope == "")]
             engine_keys = self._expand_special_keys(keys)
-            self._engine.add_user_binding(engine_mode, engine_keys, action_fn, noremap=noremap)
-            self._registered[(mode, keys)] = _RegisteredBinding(
-                mode=mode,
-                keys=keys,
-                action_fn=action_fn,
-                noremap=noremap,
-                engine_keys=engine_keys,
+            variants.append(
+                _RegisteredBinding(
+                    mode=mode,
+                    keys=keys,
+                    scope=scope,
+                    action_fn=action_fn,
+                    noremap=noremap,
+                    engine_keys=engine_keys,
+                )
             )
+            self._engine.add_user_binding(engine_mode, engine_keys, self._make_dispatcher(variants), noremap=noremap)
 
         # Store in _bindings for which-key display; skip <Plug> internals.
-        # Remove any previous entry for the same mode+keys so re-registering
-        # (e.g. user config overriding a plugin default) doesn't create duplicates
-        # that confuse which-key into showing "+group" instead of a leaf label.
+        # Mirror the variant rules above so which-key never shows the same key
+        # as a "+group" (a scoped override should not leave the global default).
         if not keys.startswith("<Plug>"):
-            self._bindings = [b for b in self._bindings if not (b.mode == mode and b.keys == keys)]
+            self._bindings = [
+                b
+                for b in self._bindings
+                if not (b.mode == mode and b.keys == keys and (b.scope == scope or (scope and b.scope == "")))
+            ]
             self._bindings.append(BindingInfo(mode=mode, keys=keys, desc=desc, noremap=noremap, scope=scope))
 
     def register_plug(self, mode: str, plug_name: str, target: Any, desc: str = "") -> None:
@@ -340,9 +362,9 @@ class BindingRegistry:  # cm:8c3a1f
         if engine_mode is None:
             return
         if not keys.startswith("<Plug>"):
-            existing = self._registered.pop((mode, keys), None)
-            engine_keys = existing.engine_keys if existing is not None else self._expand_special_keys(keys)
-            self._engine.remove_user_binding(engine_mode, engine_keys)
+            variants = self._registered.pop((mode, keys), None)
+            if variants:
+                self._engine.remove_user_binding(engine_mode, variants[0].engine_keys)
         self._bindings = [b for b in self._bindings if not (b.mode == mode and b.keys == keys)]
         # Clean up reverse plug mapping
         for entries in self._plug_to_keys.values():

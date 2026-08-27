@@ -174,6 +174,18 @@ class TestSidebarHost:
         assert host.feed_key("<Esc>")
         assert not host.visible
 
+    def test_footer_is_minimal_leader_pointer(self):
+        loop, _workspace = _make_event_loop(cols=80, rows=24)
+        host = SidebarHost()
+        host.show_panel("nav", _DummyPanel(width=20), focus=False)
+        host._binding_registry = loop._binding_registry
+
+        lines = host._get_footer_lines()
+
+        assert len(lines) == 1
+        assert "<leader>" in lines[0]
+        assert "A-l" in lines[0]
+
     def test_register_and_list_panels_preserve_order(self):
         host = SidebarHost()
         host.register_panel("explorer", _DummyPanel())
@@ -198,7 +210,7 @@ class TestSidebarHost:
     def test_render_adds_accordion_headers_above_expanded_body(self):
         host = SidebarHost()
         panel = _DummyPanel(width=22)
-        # Need enough rows for: 2 headers + separator + panel body + 7-line footer
+        # Need enough rows for: 2 headers + separator + panel body + 1-line footer
         grid = CellGrid(22, 12)
         host.register_panel("git-status", _DummyPanel(width=22))
 
@@ -219,7 +231,7 @@ class TestSidebarHost:
     def test_render_applies_theme_defaults_to_panel_body_cells(self):
         host = SidebarHost()
         panel = _ThemeDefaultPanel(width=12)
-        # Need enough rows for: header + separator + panel body + 7-line footer
+        # Need enough rows for: header + separator + panel body + 1-line footer
         grid = CellGrid(12, 10)
         theme = Theme(name="test", groups={}, default_fg=(200, 200, 200), default_bg=(31, 31, 31))
 

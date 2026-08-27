@@ -106,6 +106,11 @@ def _show_bindings(api: Any, prefix: str, mode: str) -> None:
         if allowed:
             all_bindings = [b for b in all_bindings if _sidebar_group_allowed(b, allowed, leader)]
 
+    # Multiple scope variants of the same key can be visible at once (e.g. a
+    # "sidebar" and a "panel" variant). Collapse them to the most-specific one so
+    # which-key shows a single named leaf instead of an unnamed "+group".
+    all_bindings = _dedupe_scoped(all_bindings)
+
     def _exp(b: Any) -> str:
         return b.keys.replace("<leader>", leader).replace("<Leader>", leader)
 
@@ -224,6 +229,28 @@ def _top_level_leader_key(keys: str, leader: str) -> str:
     if not expanded.startswith(leader):
         return ""
     return _first_key_token(expanded[len(leader) :])
+
+
+def _scope_specificity(scope: str) -> int:
+    """More-specific scopes win: panel > sidebar > editor > global."""
+    if not isinstance(scope, str) or not scope:
+        return 0
+    if scope == "editor":
+        return 1
+    if scope == "sidebar":
+        return 2
+    return 3
+
+
+def _dedupe_scoped(bindings: list[Any]) -> list[Any]:
+    """Keep only the most-specific visible variant for each key sequence."""
+    best: dict[str, tuple[int, Any]] = {}
+    for b in bindings:
+        key = getattr(b, "keys", "")
+        spec = _scope_specificity(getattr(b, "scope", ""))
+        if key not in best or spec > best[key][0]:
+            best[key] = (spec, b)
+    return [entry[1] for entry in best.values()]
 
 
 # ---------------------------------------------------------------------------

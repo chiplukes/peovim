@@ -170,6 +170,14 @@ when they are relevant. `nmap(..., scope=...)` accepts:
 - `"sidebar"` — active/shown only while a sidebar panel is focused.
 - `"<panel>"` (e.g. `"explorer"`) — active/shown only while that panel is focused.
 
+The same key sequence may be registered with multiple scopes; the
+most-specific active scope wins (panel > sidebar > editor > global). For
+example `<leader>wc` can be "close window" (`scope="editor"`) and "close
+sidebar" (`scope="sidebar"`) at the same time. Registering a scoped variant
+supersedes any unscoped (global) default for the key, so a user
+`nmap(..., scope="editor")` replaces a plugin's default binding; which-key
+shows a single named key, never an unnamed group.
+
 The explorer registers the `<leader>f` ("Explorer") file-operation group with
 scope `"explorer"`, so `<leader>fn/fr/fd/fc/fm/fp` only appear while the
 explorer panel is focused.

@@ -1052,15 +1052,16 @@ class TestKeymapAPI:
         called: list = []
         api.keymap.nmap("<leader>Ea", lambda: called.append(True), desc="new file", scope="explorer")
 
-        reg = api._binding_registry._registered[("normal", "<leader>Ea")]
+        variants = api._binding_registry._registered[("normal", "<leader>Ea")]
+        dispatcher = api._binding_registry._make_dispatcher(variants)
         state = api._engine._state
 
         # No panel focused → binding is inert.
-        assert reg.action_fn(state) == []
+        assert dispatcher(state) == []
 
         # Explorer focused → binding produces a RunPlugin action.
         api._binding_registry.set_scope_resolver(lambda: "explorer")
-        actions = reg.action_fn(state)
+        actions = dispatcher(state)
         assert len(actions) == 1
 
     def test_editor_scoped_binding_inert_when_panel_focused(self):
@@ -1068,15 +1069,58 @@ class TestKeymapAPI:
         called: list = []
         api.keymap.nmap("<leader>wv", lambda: called.append(True), desc="vsplit", scope="editor")
 
-        reg = api._binding_registry._registered[("normal", "<leader>wv")]
+        variants = api._binding_registry._registered[("normal", "<leader>wv")]
+        dispatcher = api._binding_registry._make_dispatcher(variants)
         state = api._engine._state
 
         # No panel focused → binding active.
-        assert len(reg.action_fn(state)) == 1
+        assert len(dispatcher(state)) == 1
 
         # Panel focused → binding inert.
         api._binding_registry.set_scope_resolver(lambda: "explorer")
-        assert reg.action_fn(state) == []
+        assert dispatcher(state) == []
+
+    def test_same_key_different_scopes_dispatch_to_active_variant(self):
+        api = _make_api()
+        editor: list = []
+        sidebar: list = []
+        api.keymap.nmap("<leader>wc", lambda: editor.append(1), desc="close window", scope="editor")
+        api.keymap.nmap("<leader>wc", lambda: sidebar.append(1), desc="close sidebar", scope="sidebar")
+
+        variants = api._binding_registry._registered[("normal", "<leader>wc")]
+        assert len(variants) == 2
+        dispatcher = api._binding_registry._make_dispatcher(variants)
+
+        # In the editor: the editor-scoped variant fires.
+        api._binding_registry.set_scope_resolver(lambda: None)
+        api._dispatcher.dispatch(dispatcher(api._engine._state))
+        assert editor == [1]
+        assert sidebar == []
+
+        # On the sidebar: the sidebar-scoped variant fires.
+        api._binding_registry.set_scope_resolver(lambda: "outline")
+        api._dispatcher.dispatch(dispatcher(api._engine._state))
+        assert editor == [1]
+        assert sidebar == [1]
+
+    def test_scoped_binding_supersedes_global_default(self):
+        api = _make_api()
+        api.keymap.nmap("<leader>wc", lambda: None, desc="global close", scope="")
+        api.keymap.nmap("<leader>wc", lambda: None, desc="close sidebar", scope="sidebar")
+
+        variants = api._binding_registry._registered[("normal", "<leader>wc")]
+        assert [v.scope for v in variants] == ["sidebar"]
+
+        infos = [b for b in api._binding_registry.get_bindings("normal") if b.keys == "<leader>wc"]
+        assert [b.scope for b in infos] == ["sidebar"]
+
+    def test_global_registered_after_scoped_adds_fallback(self):
+        api = _make_api()
+        api.keymap.nmap("<leader>wc", lambda: None, desc="close sidebar", scope="sidebar")
+        api.keymap.nmap("<leader>wc", lambda: None, desc="global close", scope="")
+
+        variants = api._binding_registry._registered[("normal", "<leader>wc")]
+        assert sorted(v.scope for v in variants) == ["", "sidebar"]
 
 
 class TestUIAPI:

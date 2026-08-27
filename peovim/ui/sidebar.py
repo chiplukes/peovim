@@ -236,13 +236,6 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
             "SidebarGrow": lambda: self._adjust_width(self._RESIZE_STEP),
         }
 
-    def _get_key_for_plug(self, plug_name: str, fallback: str) -> str:
-        """Return the key mapped to a sidebar-internal plug (from _key_to_plug), formatted for display."""
-        for key, name in self._key_to_plug.items():
-            if name == plug_name:
-                return key[1:-1] if key.startswith("<") and key.endswith(">") else key
-        return fallback
-
     def _get_nav_key(self, plug_name: str, fallback: str) -> str:
         """Return the first key bound to <Plug>plug_name, formatted for display."""
         registry = self._binding_registry
@@ -255,23 +248,9 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         return k[1:-1] if k.startswith("<") and k.endswith(">") else k
 
     def _get_footer_lines(self) -> list[str]:
-        """Return footer lines with current key bindings substituted where known."""
-        fl = self._get_nav_key("SidebarFocusLeft", "A-h")
+        """Return a minimal footer pointing at the leader (which-key) menu."""
         fr = self._get_nav_key("SidebarFocusRight", "A-l")
-        nxt = self._get_nav_key("SidebarNextPanel", "A-j")
-        prv = self._get_nav_key("SidebarPrevPanel", "A-k")
-        shrink = self._get_key_for_plug("SidebarShrink", "[")
-        grow = self._get_key_for_plug("SidebarGrow", "]")
-        close = self._get_key_for_plug("SidebarClose", "q")
-        return [
-            "keys:",
-            f"{fl} prev win    {fr} next win",
-            f"{nxt} next panel  {prv} prev panel",
-            f"{shrink}  shrink    {grow}  grow",
-            "j  down      k  up",
-            "h  collapse  l  open",
-            f"{close}  close",
-        ]
+        return [f"<leader> keys    {fr} back"]
 
     def _adjust_width(self, delta: int) -> None:
         panel = self.active_panel

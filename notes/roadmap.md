@@ -73,16 +73,9 @@ event, and UI systems.
 
 ## Sidebar / Which-key
 
-- **Trim sidebar help UI** — panel-specific single-letter operations are now
-  migrated to scoped leader groups (explorer `<leader>f`, markers
-  `<leader>mj`/`<leader>mt`, workspace-symbols `<leader>Wq`). The universal
-  bare keys remain (`j`/`k`/`h`/`l`/`<CR>`/`<Space>` navigation, `R` refresh).
-  `SidebarHost._get_footer_lines()` and the explorer/markers hint bars should be
-  trimmed to a pointer at the scoped leader group / `<leader>?`.
-- **Optional: scope-aware same-key merging** — allow the same key sequence with
-  different scopes (e.g. `wc` = close window in the editor, close sidebar on the
-  sidebar) instead of requiring distinct keys (`wq`). The engine trie currently
-  stores one action per key.
+Scope-aware same-key merging is implemented: the same key sequence can carry
+multiple scope variants, and the engine dispatches to the most-specific active
+one (panel > sidebar > editor > global). No open items remain in this area.
 
 ---
 

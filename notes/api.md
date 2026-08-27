@@ -589,7 +589,9 @@ keymap.nmap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '
 keymap.imap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '') -> None
 keymap.vmap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '') -> None
 # scope: '' = global, 'editor' = only outside sidebar, 'sidebar' = any focused
-#        sidebar panel, '<panel>' = that specific panel
+#        sidebar panel, '<panel>' = that specific panel. The same key sequence
+#        may be registered with multiple scopes; the most-specific active scope
+#        wins (panel > sidebar > editor > global).
 # planned: keymap.xmap(), keymap.omap(), keymap.tmap(), keymap.cmap()
 
 # Unmap (normal mode only; mode param planned)
