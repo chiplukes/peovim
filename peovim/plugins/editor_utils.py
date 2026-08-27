@@ -153,6 +153,7 @@ def setup(api: Any) -> None:
         for win in api.list_tab_windows():
 
             def _activate(win=win) -> None:
+                api.ui.blur_sidebar()
                 api.activate_window(win)
 
             targets.append(ChooserTarget(name="window", rect=api.window_rect(win), activate=_activate))
@@ -168,6 +169,7 @@ def setup(api: Any) -> None:
             targets.append(ChooserTarget(name="sidebar", rect=api.sidebar_rect(), activate=_goto_sidebar))
 
         def _goto_bottom() -> None:
+            api.ui.blur_sidebar()
             if api.ui.is_bottom_panel_visible():
                 api.ui.focus_bottom_panel()
             else:

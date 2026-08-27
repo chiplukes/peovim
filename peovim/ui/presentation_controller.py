@@ -41,6 +41,9 @@ class OverlayPresentationController:
             host._invalidate("full")
             return True
 
+        if self._sidebar_should_route_to_engine(key):
+            return False
+
         if self.handle_sidebar_navigation_key(key):
             host._invalidate("full")
             return True
@@ -104,6 +107,38 @@ class OverlayPresentationController:
             return True
 
         return False
+
+    def _leader_key(self) -> str:
+        """Return the configured leader key (default backslash)."""
+        es = self._host._editor_state
+        options = getattr(es, "options", None)
+        if options is None:
+            return "\\"
+        try:
+            leader = options.get("leader")
+        except Exception:
+            return "\\"
+        return leader or "\\"
+
+    def _sidebar_should_route_to_engine(self, key: str) -> bool:
+        """Return True when a focused sidebar should let *key* reach the engine.
+
+        Tree-backed sidebar panels swallow every key, which blocks leader
+        keymaps (and therefore which-key) while the sidebar is focused. Let
+        keys fall through to the modal engine when a multi-key sequence is
+        already pending, or when *key* is the leader (starting a new leader
+        sequence). Sidebar-local navigation keys never match the leader, so
+        they are unaffected.
+        """
+        host = self._host
+        sidebar = host._sidebar
+        if sidebar is None or not getattr(sidebar, "focused", False):
+            return False
+        engine = host._engine
+        if getattr(engine._state, "key_buffer", None):
+            return True
+        leader = self._leader_key()
+        return bool(leader) and key == leader
 
     def handle_sidebar_navigation_key(self, key: str) -> bool:
         sidebar = self._host._sidebar

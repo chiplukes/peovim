@@ -71,6 +71,19 @@ event, and UI systems.
 
 ---
 
+## Sidebar / Which-key
+
+- **Per-panel which-key groups** — leader keymaps and which-key already work from
+  the focused sidebar (leader passthrough in `presentation_controller`). Next step:
+  surface a panel-specific which-key group (e.g. file operations on the explorer)
+  and migrate the panel-only single keys (`a`/`r`/`d`/`c`/`C`/`p` in explorer, `g`/`e`
+  in markers, `R` refresh, etc.) to leader-prefixed `<Plug>` bindings, leaving only
+  high-frequency navigation (`j`/`k`/`h`/`l`/`<CR>`/`<Space>`) as bare keys.
+- **Trim sidebar help UI** — once which-key is the discoverability layer, shrink
+  `SidebarHost._get_footer_lines()` and the explorer `_HINT` bar.
+
+---
+
 ## Native & Performance
 
 - **Free-threaded parallel rendering** — `WindowRenderController` already dispatches

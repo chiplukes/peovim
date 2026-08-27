@@ -563,6 +563,8 @@ Key dispatch is handled in `presentation_controller.handle_sidebar_navigation_ke
 
 When the sidebar is visible but not focused, only `SidebarFocusLeft` is checked; other nav keys pass through to the engine. When the sidebar is focused, `SidebarFocusRight/NextPanel/PrevPanel` are checked first, then unmatched keys are forwarded to the active panel's `feed_key`.
 
+While the sidebar is focused, `presentation_controller._sidebar_should_route_to_engine` runs before the navigation-key check and lets keys fall through to the modal engine (skipping the panel's `feed_key`) when the engine already has a pending multi-key prefix (`_state.key_buffer` non-empty) or when the key is the leader. This keeps leader keymaps (`<leader>w*`, `<leader>wg` goto) and which-key working from the focused sidebar; sidebar-local nav keys never match the leader, so they are unaffected. `<Esc>` while a prefix is pending reaches the engine (cancelling the prefix) instead of closing the sidebar.
+
 #### Mouse clicks
 
 `MouseDispatcher` routes clicks inside the sidebar rect to `SidebarHost.click(row, col)` using panel-local coordinates:

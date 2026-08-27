@@ -406,6 +406,49 @@ class TestEventLoopSidebarLayout:
         assert len(calls) == 2
 
 
+class TestSidebarLeaderPassthrough:
+    def test_leader_key_falls_through_when_sidebar_focused(self):
+        loop, _workspace = _make_event_loop(cols=80, rows=24)
+        host = SidebarHost()
+        panel = _DummyPanel(width=20)
+        host.show_panel("nav", panel, focus=True)
+        loop._sidebar = host
+
+        assert loop._handle_overlay_key("\\") is False
+        assert panel.keys == []
+
+    def test_regular_key_still_consumed_by_focused_sidebar(self):
+        loop, _workspace = _make_event_loop(cols=80, rows=24)
+        host = SidebarHost()
+        panel = _DummyPanel(width=20)
+        host.show_panel("nav", panel, focus=True)
+        loop._sidebar = host
+
+        assert loop._handle_overlay_key("j") is True
+        assert panel.keys == ["j"]
+
+    def test_pending_prefix_key_falls_through_when_sidebar_focused(self):
+        loop, _workspace = _make_event_loop(cols=80, rows=24)
+        host = SidebarHost()
+        panel = _DummyPanel(width=20)
+        host.show_panel("nav", panel, focus=True)
+        loop._sidebar = host
+        loop._engine._state.key_buffer = ["\\"]
+
+        assert loop._handle_overlay_key("w") is False
+        assert panel.keys == []
+
+    def test_leader_key_not_intercepted_when_sidebar_unfocused(self):
+        loop, _workspace = _make_event_loop(cols=80, rows=24)
+        host = SidebarHost()
+        panel = _DummyPanel(width=20)
+        host.show_panel("nav", panel, focus=False)
+        loop._sidebar = host
+
+        assert loop._handle_overlay_key("\\") is False
+        assert panel.keys == []
+
+
 class TestSidebarFullRedrawFlag:
     def test_flag_set_when_panel_switches(self):
         host = SidebarHost()

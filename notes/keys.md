@@ -154,6 +154,12 @@ one shows + focuses it.
 | `]` | Grow sidebar width |
 | `q` / `<Esc>` | Close sidebar |
 
+Leader keymaps keep working while the sidebar is focused: pressing the leader
+(or continuing a pending leader prefix) routes to the engine, so `<leader>w*`
+window commands and `<leader>wg` (goto window/sidebar/bottom panel) can be used
+to leave the sidebar. `<Esc>` while a leader prefix is pending cancels the
+prefix (hiding which-key) rather than closing the sidebar.
+
 ### Bottom panel-internal keys (while panel is focused)
 
 | Key | Action |
