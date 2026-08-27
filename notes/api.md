@@ -588,7 +588,8 @@ keymap.local_leader -> str
 keymap.nmap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '') -> None
 keymap.imap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '') -> None
 keymap.vmap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '') -> None
-# scope: '' = global, 'sidebar' = any focused sidebar panel, '<panel>' = that panel
+# scope: '' = global, 'editor' = only outside sidebar, 'sidebar' = any focused
+#        sidebar panel, '<panel>' = that specific panel
 # planned: keymap.xmap(), keymap.omap(), keymap.tmap(), keymap.cmap()
 
 # Unmap (normal mode only; mode param planned)

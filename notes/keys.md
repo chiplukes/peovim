@@ -166,6 +166,7 @@ Bindings can be scoped to a sidebar context so which-key only surfaces them
 when they are relevant. `nmap(..., scope=...)` accepts:
 
 - `""` (default) — global, always active and shown.
+- `"editor"` — active/shown only when no sidebar panel is focused.
 - `"sidebar"` — active/shown only while a sidebar panel is focused.
 - `"<panel>"` (e.g. `"explorer"`) — active/shown only while that panel is focused.
 
@@ -493,8 +494,8 @@ Marker data is stored per-project in `.peovim/markers.json` when inside a detect
 |-----|--------|
 | `j` / `k` | Navigate |
 | `<CR>` | Jump to selected marker |
-| `g` | Go to marker in active editor window |
-| `e` | Edit annotation for selected marker |
+| `<leader>mj` | Jump to selected marker (scope `"markers"`) |
+| `<leader>mt` | Edit annotation for selected marker (scope `"markers"`) |
 
 ---
 
@@ -625,7 +626,7 @@ Requires `peovim.plugins.workspace_symbols`.
 |-----|--------|
 | `j` / `k` | Navigate |
 | `<CR>` | Jump to symbol location |
-| `/` | Prompt for new workspace symbol query |
+| `<leader>Wq` | Prompt for new workspace symbol query (scope `"workspace-symbols"`) |
 | `R` | Refresh current query |
 
 ---

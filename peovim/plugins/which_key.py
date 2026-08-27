@@ -194,6 +194,8 @@ def _binding_visible(b: Any, active_panel: str | None) -> bool:
         return True
     if scope == "sidebar":
         return active_panel is not None
+    if scope == "editor":
+        return active_panel is None
     return scope == active_panel
 
 

@@ -63,7 +63,7 @@ class BindingInfo:
     keys: str
     desc: str
     noremap: bool
-    scope: str = ""  # "" = global, "sidebar" = any focused panel, "<panel>" = specific panel
+    scope: str = ""  # "" = global, "editor" = not sidebar, "sidebar" = any focused panel, "<panel>" = specific panel
 
 
 @dataclass
@@ -123,8 +123,9 @@ class BindingRegistry:  # cm:8c3a1f
         """Set a callable returning the focused sidebar panel name, or None.
 
         Used to gate panel-scoped bindings: a binding with scope ``"sidebar"``
-        is active while any sidebar panel is focused; a binding with scope
-        ``"<panel>"`` is active only while that panel is focused.
+        is active while any sidebar panel is focused, scope ``"editor"`` is
+        active only when no sidebar panel is focused, and scope ``"<panel>"``
+        is active only while that panel is focused.
         """
         self._scope_resolver = resolver
 
@@ -135,6 +136,8 @@ class BindingRegistry:  # cm:8c3a1f
         active = self._scope_resolver() if self._scope_resolver is not None else None
         if scope == "sidebar":
             return active is not None
+        if scope == "editor":
+            return active is None
         return active == scope
 
     def _subscribe_option_changes(self) -> None:
@@ -195,9 +198,9 @@ class BindingRegistry:  # cm:8c3a1f
         """Register a key binding.
 
         *scope* scopes the binding to a sidebar panel context: ``""`` (default)
-        is global, ``"sidebar"`` is active while any sidebar panel is focused,
-        and a panel name (e.g. ``"explorer"``) is active only while that panel
-        is focused.
+        is global, ``"editor"`` is active only when no sidebar panel is focused,
+        ``"sidebar"`` is active while any sidebar panel is focused, and a panel
+        name (e.g. ``"explorer"``) is active only while that panel is focused.
         """
         from peovim.modal.actions import RunNormalKeys, RunPlugin
 

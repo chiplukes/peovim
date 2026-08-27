@@ -1039,11 +1039,13 @@ class TestKeymapAPI:
         reg.set_scope_resolver(lambda: None)
         assert reg._scope_active("sidebar") is False
         assert reg._scope_active("explorer") is False
+        assert reg._scope_active("editor") is True
 
         reg.set_scope_resolver(lambda: "explorer")
         assert reg._scope_active("sidebar") is True
         assert reg._scope_active("explorer") is True
         assert reg._scope_active("outline") is False
+        assert reg._scope_active("editor") is False
 
     def test_scoped_binding_gates_on_focused_panel(self):
         api = _make_api()
@@ -1060,6 +1062,21 @@ class TestKeymapAPI:
         api._binding_registry.set_scope_resolver(lambda: "explorer")
         actions = reg.action_fn(state)
         assert len(actions) == 1
+
+    def test_editor_scoped_binding_inert_when_panel_focused(self):
+        api = _make_api()
+        called: list = []
+        api.keymap.nmap("<leader>wv", lambda: called.append(True), desc="vsplit", scope="editor")
+
+        reg = api._binding_registry._registered[("normal", "<leader>wv")]
+        state = api._engine._state
+
+        # No panel focused → binding active.
+        assert len(reg.action_fn(state)) == 1
+
+        # Panel focused → binding inert.
+        api._binding_registry.set_scope_resolver(lambda: "explorer")
+        assert reg.action_fn(state) == []
 
 
 class TestUIAPI:

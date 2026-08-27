@@ -26,7 +26,6 @@ class _WorkspaceSymbolsSidebarPanel:
             title="Workspace Symbols",
             on_select=self._on_select,
             on_cursor_move=self._on_cursor_move,
-            on_key=self._on_key,
             width=width,
         )
 
@@ -95,11 +94,9 @@ class _WorkspaceSymbolsSidebarPanel:
         else:
             self._api.open_buffer(Path(path), line, col)
 
-    def _on_key(self, key: str, node: Any | None) -> bool:
-        if key != "/":
-            return False
+    def op_query(self) -> None:
+        """Prompt for a new workspace symbol query (leader-scoped)."""
         self._api.open_cmdline(f"WorkspaceSymbolsPanel {self._query}".rstrip())
-        return True
 
 
 def setup(api: EditorAPI) -> None:
@@ -118,6 +115,9 @@ def setup(api: EditorAPI) -> None:
         "<Plug>WorkspaceSymbolsPanel",
         desc="Workspace symbols: sidebar",
     )
+    # Panel-local operation — active only while the workspace symbols sidebar is focused.
+    api.keymap.ngroup("<leader>W", "Workspace Symbols")
+    api.keymap.nmap("<leader>Wq", _panel.op_query, desc="New query", scope="workspace-symbols")
     api.commands.register(
         "WorkspaceSymbolsPanel",
         lambda cmd, ctx: _command_workspace_symbols_panel(api, cmd),

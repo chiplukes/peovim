@@ -73,15 +73,16 @@ event, and UI systems.
 
 ## Sidebar / Which-key
 
-- **Migrate remaining panels to scoped leader groups** — the explorer now exposes
-  its file ops under `<leader>f` (scope `"explorer"`). Follow the same pattern
-  for the other panels' single keys: markers (`g`/`e` edit), codemap (`R`
-  rescan), outline/references/diagnostics/workspace-symbols (`R` refresh), and
-  file history. Replace each panel's hint/footer text with which-key as the
-  discoverability layer.
-- **Trim sidebar help UI** — `SidebarHost._get_footer_lines()` still lists every
-  bare key; collapse it to a pointer at the panel's scoped leader group /
-  `<leader>?` once panels stop relying on single-letter operations.
+- **Trim sidebar help UI** — panel-specific single-letter operations are now
+  migrated to scoped leader groups (explorer `<leader>f`, markers
+  `<leader>mj`/`<leader>mt`, workspace-symbols `<leader>Wq`). The universal
+  bare keys remain (`j`/`k`/`h`/`l`/`<CR>`/`<Space>` navigation, `R` refresh).
+  `SidebarHost._get_footer_lines()` and the explorer/markers hint bars should be
+  trimmed to a pointer at the scoped leader group / `<leader>?`.
+- **Optional: scope-aware same-key merging** — allow the same key sequence with
+  different scopes (e.g. `wc` = close window in the editor, close sidebar on the
+  sidebar) instead of requiring distinct keys (`wq`). The engine trie currently
+  stores one action per key.
 
 ---
 

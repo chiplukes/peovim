@@ -17,15 +17,19 @@ class KeymapAPI:  # cm:f2b8e7
         self._registry = registry
 
     def nmap(self, keys: str, target: Any, desc: str = "", *, scope: str = "") -> None:
-        """Register a normal-mode binding, optionally scoped to a sidebar panel."""
+        """Register a normal-mode binding, optionally scoped to a sidebar panel context.
+
+        scope: '' = global, 'editor' = only outside the sidebar, 'sidebar' = any
+        focused panel, '<panel>' = that specific panel.
+        """
         self._registry.register("normal", keys, target, desc=desc, scope=scope)
 
     def vmap(self, keys: str, target: Any, desc: str = "", *, scope: str = "") -> None:
-        """Register a visual-mode binding, optionally scoped to a sidebar panel."""
+        """Register a visual-mode binding, optionally scoped to a sidebar panel context."""
         self._registry.register("visual", keys, target, desc=desc, scope=scope)
 
     def imap(self, keys: str, target: Any, desc: str = "", *, scope: str = "") -> None:
-        """Register an insert-mode binding, optionally scoped to a sidebar panel."""
+        """Register an insert-mode binding, optionally scoped to a sidebar panel context."""
         self._registry.register("insert", keys, target, desc=desc, scope=scope)
 
     def nunmap(self, keys: str) -> None:

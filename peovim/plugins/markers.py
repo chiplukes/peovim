@@ -383,7 +383,7 @@ class _PathStore:
 
 
 class _MarkersSidebarPanel:
-    _HINT = "g-o  e-dit"
+    _HINT = "<leader>m  ops"
 
     def __init__(self, api: Any, controller: _MarkersController, *, width: int = 38) -> None:
         from peovim.ui.tree_view import TreeView
@@ -396,7 +396,6 @@ class _MarkersSidebarPanel:
             title="Markers",
             on_select=self._on_select,
             on_cursor_move=self._on_cursor_move,
-            on_key=self._on_key,
             width=width,
         )
 
@@ -475,19 +474,13 @@ class _MarkersSidebarPanel:
             self._api.open_buffer(Path(path), line, col)
         self._controller.refresh_annotation_ghost_text()
 
-    def _on_key(self, key: str, node: Any) -> bool:
-        if node is None:
-            return False
-        if not isinstance(node.value, tuple) or not node.value or node.value[0] != "marker":
-            return False
+    def _selected_marker(self) -> tuple[Path, int, int] | None:
+        """Return the (path, line, col) of the selected marker, or None."""
+        node = self._tree.selected_node
+        if node is None or not isinstance(node.value, tuple) or not node.value or node.value[0] != "marker":
+            return None
         _kind, path, line, col = node.value
-        if key == "g":
-            self._controller.jump_to_marker(Path(path), line, col)
-            return True
-        if key == "e":
-            self._controller.prompt_marker_text(Path(path), line, col)
-            return True
-        return False
+        return Path(path), int(line), int(col)
 
 
 class _MarkersController:
@@ -688,6 +681,24 @@ class _MarkersController:
         self._api.goto_location(path, line, col)
         self._api.ui.blur_sidebar()
 
+    def panel_jump(self) -> None:
+        """Jump to the marker selected in the markers sidebar (leader-scoped)."""
+        panel = self._get_panel()
+        sel = panel._selected_marker() if panel is not None else None
+        if sel is None:
+            return
+        path, line, col = sel
+        self.jump_to_marker(path, line, col)
+
+    def panel_edit(self) -> None:
+        """Edit the annotation of the marker selected in the sidebar (leader-scoped)."""
+        panel = self._get_panel()
+        sel = panel._selected_marker() if panel is not None else None
+        if sel is None:
+            return
+        path, line, col = sel
+        self.prompt_marker_text(path, line, col)
+
     def build_nodes(self, expanded_values: set[tuple] | None = None) -> list[TreeNode]:
         from peovim.ui.tree_view import TreeNode
 
@@ -837,6 +848,10 @@ def setup(api: EditorAPI) -> None:
     api.keymap.nmap("<leader>mgs", "<Plug>MarkerGroupSelect", desc="Markers: select group")
     api.keymap.nmap("<leader>mgr", "<Plug>MarkerGroupRename", desc="Markers: rename group")
     api.keymap.nmap("<leader>mgd", "<Plug>MarkerGroupDelete", desc="Markers: delete group")
+
+    # Panel-local operations — active only while the markers sidebar is focused.
+    api.keymap.nmap("<leader>mj", _controller.panel_jump, desc="Jump to marker", scope="markers")
+    api.keymap.nmap("<leader>mt", _controller.panel_edit, desc="Edit annotation", scope="markers")
 
     api.commands.register("Markers", lambda cmd, ctx: _controller.toggle_panel(), min_abbrev=3)
     api.commands.register("MarkerText", lambda cmd, ctx: _controller.command_marker_text(cmd), min_abbrev=10)

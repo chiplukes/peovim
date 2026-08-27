@@ -236,7 +236,7 @@ class TestMarkersController:
 
         assert prompts == [(":", "MarkerText todo")]
 
-    def test_panel_g_jumps_to_selected_marker(self, tmp_path, monkeypatch):
+    def test_panel_jump_jumps_to_selected_marker(self, tmp_path, monkeypatch):
         api = _make_api(tmp_path, monkeypatch)
         controller = _MarkersController(api)
         controller.store.add_marker("default", str(api.active_buffer().path), 1, 0)
@@ -245,11 +245,11 @@ class TestMarkersController:
         panel.tree.select_value(("marker", str(api.active_buffer().path.resolve()), 1, 0))
         api.active_window().set_cursor(0, 0)
 
-        panel.feed_key("g")
+        controller.panel_jump()
 
         assert api.active_window().cursor == (1, 0)
 
-    def test_panel_e_targets_selected_marker_annotation(self, tmp_path, monkeypatch):
+    def test_panel_edit_targets_selected_marker_annotation(self, tmp_path, monkeypatch):
         api = _make_api(tmp_path, monkeypatch)
         controller = _MarkersController(api)
         controller.store.add_marker("default", str(api.active_buffer().path), 1, 0, "todo")
@@ -260,7 +260,7 @@ class TestMarkersController:
         monkeypatch.setattr(api, "open_cmdline", lambda initial="", prompt=":": prompts.append((prompt, initial)))
         api.active_window().set_cursor(0, 0)
 
-        panel.feed_key("e")
+        controller.panel_edit()
         controller.command_marker_text(parse_ex_command("MarkerText revisit"))
 
         assert prompts == [(":", "MarkerText todo")]

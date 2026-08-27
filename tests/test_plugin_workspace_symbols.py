@@ -186,16 +186,15 @@ class TestWorkspaceSymbolsPlugin:
         assert opened == [(Path("/other/file.py"), 5, 2)]
         assert blurred == []
 
-    def test_slash_key_opens_query_prompt(self, monkeypatch):
+    def test_op_query_opens_query_prompt(self, monkeypatch):
         api = _make_api()
         panel = _WorkspaceSymbolsSidebarPanel(api)
         prompts: list[str] = []
         monkeypatch.setattr(api, "open_cmdline", lambda initial="", prompt=":": prompts.append(initial))
         panel.set_query("beta")
 
-        handled = panel._on_key("/", None)
+        panel.op_query()
 
-        assert handled
         assert prompts == ["WorkspaceSymbolsPanel beta"]
 
 
