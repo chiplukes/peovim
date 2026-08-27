@@ -160,6 +160,25 @@ window commands and `<leader>wg` (goto window/sidebar/bottom panel) can be used
 to leave the sidebar. `<Esc>` while a leader prefix is pending cancels the
 prefix (hiding which-key) rather than closing the sidebar.
 
+### Panel-scoped leader groups
+
+Bindings can be scoped to a sidebar context so which-key only surfaces them
+when they are relevant. `nmap(..., scope=...)` accepts:
+
+- `""` (default) — global, always active and shown.
+- `"sidebar"` — active/shown only while a sidebar panel is focused.
+- `"<panel>"` (e.g. `"explorer"`) — active/shown only while that panel is focused.
+
+The explorer registers the `<leader>f` ("Explorer") file-operation group with
+scope `"explorer"`, so `<leader>fn/fr/fd/fc/fm/fp` only appear while the
+explorer panel is focused.
+
+The `which_key_sidebar_groups` option (space/comma-separated leader prefixes)
+restricts which *global* leader groups appear in which-key while a sidebar
+panel is focused. For example, `options.set("which_key_sidebar_groups", "p w")`
+shows only the `<leader>p` (Panels) and `<leader>w` (Window) groups on the
+sidebar, hiding the rest. An empty value (default) shows all groups.
+
 ### Bottom panel-internal keys (while panel is focused)
 
 | Key | Action |
@@ -386,16 +405,19 @@ Requires `peovim.plugins.explorer`.
 | Key | `<Plug>` | Context | Action |
 |-----|---------|---------|--------|
 | `<leader>e` | `ExplorerToggle` | Normal | Toggle file explorer sidebar |
-| `a` | — | Explorer focused | Create file or directory (end path with `/` for dir) |
-| `r` | — | Explorer focused | Rename selected entry |
-| `d` | — | Explorer focused | Delete selected entry (with confirmation) |
-| `c` | — | Explorer focused | Copy selected entry |
-| `C` | — | Explorer focused | Mark selected entry for move |
-| `p` | — | Explorer focused | Paste into selected directory |
+| `<leader>fn` | — | Explorer focused | Create file or directory (end path with `/` for dir) |
+| `<leader>fr` | — | Explorer focused | Rename selected entry |
+| `<leader>fd` | — | Explorer focused | Delete selected entry (with confirmation) |
+| `<leader>fc` | — | Explorer focused | Copy selected entry |
+| `<leader>fm` | — | Explorer focused | Mark selected entry for move |
+| `<leader>fp` | — | Explorer focused | Paste into selected directory |
 | `R` | — | Explorer focused | Refresh tree |
 | `<CR>` | — | Explorer focused | Open selected file |
 | `A`–`Z` (any case) | — | Explorer focused, >1 split | Open selected file in the window marked with that letter's badge |
 | `Esc` / `<C-c>` | — | Explorer window chooser | Cancel and keep the explorer focused |
+
+File operations live under the `<leader>f` group, which which-key only shows
+while the explorer panel is focused (see [Panel-scoped leader groups](#panel-scoped-leader-groups)).
 
 Git-backed explorer shows `+` (new), `~` (modified), `!` (deleted) prefixes on entries.
 

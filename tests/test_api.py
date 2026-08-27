@@ -1031,6 +1031,36 @@ class TestKeymapAPI:
         api = _make_api()
         assert isinstance(api.keymap.local_leader, str)
 
+    def test_scope_active_semantics(self):
+        api = _make_api()
+        reg = api._binding_registry
+        assert reg._scope_active("") is True  # global bindings always active
+
+        reg.set_scope_resolver(lambda: None)
+        assert reg._scope_active("sidebar") is False
+        assert reg._scope_active("explorer") is False
+
+        reg.set_scope_resolver(lambda: "explorer")
+        assert reg._scope_active("sidebar") is True
+        assert reg._scope_active("explorer") is True
+        assert reg._scope_active("outline") is False
+
+    def test_scoped_binding_gates_on_focused_panel(self):
+        api = _make_api()
+        called: list = []
+        api.keymap.nmap("<leader>Ea", lambda: called.append(True), desc="new file", scope="explorer")
+
+        reg = api._binding_registry._registered[("normal", "<leader>Ea")]
+        state = api._engine._state
+
+        # No panel focused → binding is inert.
+        assert reg.action_fn(state) == []
+
+        # Explorer focused → binding produces a RunPlugin action.
+        api._binding_registry.set_scope_resolver(lambda: "explorer")
+        actions = reg.action_fn(state)
+        assert len(actions) == 1
+
 
 class TestUIAPI:
     def test_show_and_hide_which_key_forward_to_panel(self):

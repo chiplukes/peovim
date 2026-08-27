@@ -73,14 +73,15 @@ event, and UI systems.
 
 ## Sidebar / Which-key
 
-- **Per-panel which-key groups** — leader keymaps and which-key already work from
-  the focused sidebar (leader passthrough in `presentation_controller`). Next step:
-  surface a panel-specific which-key group (e.g. file operations on the explorer)
-  and migrate the panel-only single keys (`a`/`r`/`d`/`c`/`C`/`p` in explorer, `g`/`e`
-  in markers, `R` refresh, etc.) to leader-prefixed `<Plug>` bindings, leaving only
-  high-frequency navigation (`j`/`k`/`h`/`l`/`<CR>`/`<Space>`) as bare keys.
-- **Trim sidebar help UI** — once which-key is the discoverability layer, shrink
-  `SidebarHost._get_footer_lines()` and the explorer `_HINT` bar.
+- **Migrate remaining panels to scoped leader groups** — the explorer now exposes
+  its file ops under `<leader>f` (scope `"explorer"`). Follow the same pattern
+  for the other panels' single keys: markers (`g`/`e` edit), codemap (`R`
+  rescan), outline/references/diagnostics/workspace-symbols (`R` refresh), and
+  file history. Replace each panel's hint/footer text with which-key as the
+  discoverability layer.
+- **Trim sidebar help UI** — `SidebarHost._get_footer_lines()` still lists every
+  bare key; collapse it to a pointer at the panel's scoped leader group /
+  `<leader>?` once panels stop relying on single-letter operations.
 
 ---
 

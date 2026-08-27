@@ -44,7 +44,7 @@ _WINDOW_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 class _ExplorerSidebarPanel:
     """Explorer sidebar with a one-line operations hint above the tree."""
 
-    _HINT = "c-py  C-ut  p-st  r-en  d-el"
+    _HINT = "<leader>f  file ops"
 
     def __init__(self, tree, *, width: int = 30) -> None:
         self.tree = tree
@@ -104,7 +104,6 @@ class _ExplorerController:  # cm:1f4c6a
                 title="Explorer",
                 width=30,
                 on_select=self._open_selected,
-                on_key=self._on_tree_key,
             )
             self._panel = _ExplorerSidebarPanel(tree, width=30)
             self._api.ui.show_sidebar_panel("explorer", self._panel, focus=True)
@@ -310,38 +309,57 @@ class _ExplorerController:  # cm:1f4c6a
         self.refresh(selected_path=destination)
         return True
 
-    def _on_tree_key(self, key: str, node: TreeNode | None) -> bool:
-        if node is None or node.value is None:
-            return False
-        if node.label == "..":
-            return False  # No file ops on the parent-navigation entry
-        path = pathlib.Path(str(node.value))
-        if key == "a":
-            self._pending_create_dir = path if path.is_dir() else path.parent
-            self._api.open_cmdline("ExplorerCreate ")
-            return True
-        if key == "r":
-            self._pending_rename_path = path
-            self._api.open_cmdline(f"ExplorerRename {path.name}")
-            return True
-        if key == "d":
-            self._pending_delete_path = path
-            _set_status(self._api, f"Delete {path.name}? Press Enter to confirm or Esc to cancel")
-            self._api.open_cmdline("ExplorerDelete")
-            return True
-        if key == "c":
-            self._clipboard_path = path
-            self._clipboard_mode = "copy"
-            _set_status(self._api, f"Copied {path.name} to explorer clipboard")
-            return True
-        if key == "C":
-            self._clipboard_path = path
-            self._clipboard_mode = "move"
-            _set_status(self._api, f"Marked {path.name} to move")
-            return True
-        if key == "p":
-            return self._paste_into(path)
-        return False
+    def _selected_path(self) -> pathlib.Path | None:
+        """Return the selected tree entry's path, or None if none is usable."""
+        if self._panel is None:
+            return None
+        node = self._panel.tree.selected_node
+        if node is None or node.value is None or node.label == "..":
+            return None
+        return pathlib.Path(str(node.value))
+
+    def op_new(self) -> None:
+        path = self._selected_path()
+        if path is None:
+            return
+        self._pending_create_dir = path if path.is_dir() else path.parent
+        self._api.open_cmdline("ExplorerCreate ")
+
+    def op_rename(self) -> None:
+        path = self._selected_path()
+        if path is None:
+            return
+        self._pending_rename_path = path
+        self._api.open_cmdline(f"ExplorerRename {path.name}")
+
+    def op_delete(self) -> None:
+        path = self._selected_path()
+        if path is None:
+            return
+        self._pending_delete_path = path
+        _set_status(self._api, f"Delete {path.name}? Press Enter to confirm or Esc to cancel")
+        self._api.open_cmdline("ExplorerDelete")
+
+    def op_copy(self) -> None:
+        path = self._selected_path()
+        if path is None:
+            return
+        self._clipboard_path = path
+        self._clipboard_mode = "copy"
+        _set_status(self._api, f"Copied {path.name} to explorer clipboard")
+
+    def op_move(self) -> None:
+        path = self._selected_path()
+        if path is None:
+            return
+        self._clipboard_path = path
+        self._clipboard_mode = "move"
+        _set_status(self._api, f"Marked {path.name} to move")
+
+    def op_paste(self) -> None:
+        path = self._selected_path()
+        if path is not None:
+            self._paste_into(path)
 
 
 def setup(api: EditorAPI) -> None:
@@ -351,6 +369,16 @@ def setup(api: EditorAPI) -> None:
 
     api.keymap.define_plug("ExplorerToggle", _controller.toggle, desc="Explorer: toggle file tree")
     api.keymap.nmap("<leader>e", "<Plug>ExplorerToggle", desc="Explorer: toggle file tree")
+
+    # File operations — leader group active only while the explorer panel is focused.
+    api.keymap.ngroup("<leader>f", "Explorer")
+    api.keymap.nmap("<leader>fn", _controller.op_new, desc="New file/dir", scope="explorer")
+    api.keymap.nmap("<leader>fr", _controller.op_rename, desc="Rename", scope="explorer")
+    api.keymap.nmap("<leader>fd", _controller.op_delete, desc="Delete", scope="explorer")
+    api.keymap.nmap("<leader>fc", _controller.op_copy, desc="Copy", scope="explorer")
+    api.keymap.nmap("<leader>fm", _controller.op_move, desc="Move (cut)", scope="explorer")
+    api.keymap.nmap("<leader>fp", _controller.op_paste, desc="Paste", scope="explorer")
+
     api.commands.register("Explorer", lambda cmd, ctx: _controller.toggle(), min_abbrev=3)
     api.commands.register("ExplorerCreate", lambda cmd, ctx: _controller.command_create(cmd), min_abbrev=12)
     api.commands.register("ExplorerCopyAs", lambda cmd, ctx: _controller.command_copy_as(cmd), min_abbrev=12)

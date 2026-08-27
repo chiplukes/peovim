@@ -194,6 +194,12 @@ class UIAPI:  # cm:3c9d4f
     def active_sidebar_panel_name(self) -> str | None:
         return self._sidebar.active_panel_name
 
+    def focused_sidebar_panel_name(self) -> str | None:
+        """Return the active panel name when the sidebar is focused, else None."""
+        if not self._sidebar.focused:
+            return None
+        return self._sidebar.active_panel_name
+
     def register_sidebar_panel(self, name: str, panel: Any) -> Any:
         return self._sidebar.register_panel(name, panel)
 

@@ -63,6 +63,7 @@ class BindingInfo:
     keys: str
     desc: str
     noremap: bool
+    scope: str = ""  # "" = global, "sidebar" = any focused panel, "<panel>" = specific panel
 
 
 @dataclass
@@ -93,6 +94,7 @@ class BindingRegistry:  # cm:8c3a1f
         self._plug_to_keys: dict[str, list[tuple[str, str]]] = {}  # plug_name → [(mode, keys)]
         self._registered: dict[tuple[str, str], _RegisteredBinding] = {}
         self._next_id: int = 0
+        self._scope_resolver: Any = None
         self._subscribe_option_changes()
 
     def _get_leader(self) -> str:
@@ -116,6 +118,24 @@ class BindingRegistry:  # cm:8c3a1f
             .replace("<leader>", leader)
             .replace("<Leader>", leader)
         )
+
+    def set_scope_resolver(self, resolver: Any) -> None:
+        """Set a callable returning the focused sidebar panel name, or None.
+
+        Used to gate panel-scoped bindings: a binding with scope ``"sidebar"``
+        is active while any sidebar panel is focused; a binding with scope
+        ``"<panel>"`` is active only while that panel is focused.
+        """
+        self._scope_resolver = resolver
+
+    def _scope_active(self, scope: str) -> bool:
+        """Return True when a panel-scoped binding should currently fire."""
+        if not scope:
+            return True
+        active = self._scope_resolver() if self._scope_resolver is not None else None
+        if scope == "sidebar":
+            return active is not None
+        return active == scope
 
     def _subscribe_option_changes(self) -> None:
         es = getattr(self._dispatcher, "_editor_state", None)
@@ -169,8 +189,16 @@ class BindingRegistry:  # cm:8c3a1f
         }
         return mode_map.get(mode)
 
-    def register(self, mode: str, keys: str, target: Any, *, noremap: bool = True, desc: str = "") -> None:
-        """Register a key binding."""
+    def register(
+        self, mode: str, keys: str, target: Any, *, noremap: bool = True, desc: str = "", scope: str = ""
+    ) -> None:
+        """Register a key binding.
+
+        *scope* scopes the binding to a sidebar panel context: ``""`` (default)
+        is global, ``"sidebar"`` is active while any sidebar panel is focused,
+        and a panel name (e.g. ``"explorer"``) is active only while that panel
+        is focused.
+        """
         from peovim.modal.actions import RunNormalKeys, RunPlugin
 
         engine_mode = self._mode_to_engine_mode(mode)
@@ -210,6 +238,14 @@ class BindingRegistry:  # cm:8c3a1f
             def action_fn(state: Any, _tgt: str = target) -> list:  # type: ignore[misc]
                 return [RunNormalKeys(_tgt, remap=True)]
 
+        if scope:
+            base_action_fn = action_fn
+
+            def action_fn(state: Any, _base: Any = base_action_fn, _scope: str = scope) -> list:  # type: ignore[misc]
+                if not self._scope_active(_scope):
+                    return []
+                return _base(state)
+
         # <Plug> keys are registered verbatim (single token) — skip for engine
         if not keys.startswith("<Plug>"):
             existing = self._registered.get((mode, keys))
@@ -231,7 +267,7 @@ class BindingRegistry:  # cm:8c3a1f
         # that confuse which-key into showing "+group" instead of a leaf label.
         if not keys.startswith("<Plug>"):
             self._bindings = [b for b in self._bindings if not (b.mode == mode and b.keys == keys)]
-            self._bindings.append(BindingInfo(mode=mode, keys=keys, desc=desc, noremap=noremap))
+            self._bindings.append(BindingInfo(mode=mode, keys=keys, desc=desc, noremap=noremap, scope=scope))
 
     def register_plug(self, mode: str, plug_name: str, target: Any, desc: str = "") -> None:
         """Register a <Plug> target (callable only). Shortcut for define_plug."""

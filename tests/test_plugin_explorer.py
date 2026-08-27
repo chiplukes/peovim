@@ -60,6 +60,16 @@ def _make_api() -> EditorAPI:
     return api
 
 
+def _controller_with_selection(api: EditorAPI, node) -> _ExplorerController:
+    """Build a controller whose explorer panel has *node* as the selected entry."""
+    from peovim.ui.tree_view import TreeView
+
+    controller = _ExplorerController(api)
+    tree = TreeView([node], title="Explorer", width=30)
+    controller._panel = _ExplorerSidebarPanel(tree, width=30)
+    return controller
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -275,11 +285,8 @@ class TestExplorerPlugin:
         panel.render(grid)
 
         text = "".join(cell[0] for cell in grid._current[0]).rstrip()
-        assert "c-py" in text
-        assert "C-ut" in text
-        assert "p-st" in text
-        assert "r-en" in text
-        assert "d-el" in text
+        assert "<leader>f" in text
+        assert "file ops" in text
 
     def test_click_on_directory_expands_it(self, tmp_path):
         (tmp_path / "subdir").mkdir()
@@ -460,51 +467,48 @@ class TestExplorerCommands:
 
         assert not target.exists()
 
-    def test_tree_key_a_opens_create_prompt(self, tmp_path, monkeypatch):
+    def test_op_new_opens_create_prompt(self, tmp_path, monkeypatch):
         from peovim.ui.tree_view import TreeNode
 
         api = _make_api()
-        controller = _ExplorerController(api)
         prompts = []
         monkeypatch.setattr(api, "open_cmdline", lambda initial="", prompt=":": prompts.append((prompt, initial)))
         node = TreeNode(label="dir", value=str(tmp_path), children_fn=lambda: [])
+        controller = _controller_with_selection(api, node)
 
-        handled = controller._on_tree_key("a", node)
+        controller.op_new()
 
-        assert handled
         assert prompts == [(":", "ExplorerCreate ")]
 
-    def test_tree_key_c_copies_to_explorer_clipboard(self, tmp_path):
+    def test_op_copy_copies_to_explorer_clipboard(self, tmp_path):
         from peovim.ui.tree_view import TreeNode
 
         api = _make_api()
-        controller = _ExplorerController(api)
         source = tmp_path / "copy.txt"
         source.write_text("copy", encoding="utf-8")
         node = TreeNode(label="copy.txt", value=str(source), children_fn=None)
+        controller = _controller_with_selection(api, node)
 
-        handled = controller._on_tree_key("c", node)
+        controller.op_copy()
 
-        assert handled
         assert controller._clipboard_mode == "copy"
         assert controller._clipboard_path == source
 
-    def test_tree_key_capital_c_marks_move_in_explorer_clipboard(self, tmp_path):
+    def test_op_move_marks_move_in_explorer_clipboard(self, tmp_path):
         from peovim.ui.tree_view import TreeNode
 
         api = _make_api()
-        controller = _ExplorerController(api)
         source = tmp_path / "move.txt"
         source.write_text("move", encoding="utf-8")
         node = TreeNode(label="move.txt", value=str(source), children_fn=None)
+        controller = _controller_with_selection(api, node)
 
-        handled = controller._on_tree_key("C", node)
+        controller.op_move()
 
-        assert handled
         assert controller._clipboard_mode == "move"
         assert controller._clipboard_path == source
 
-    def test_tree_key_p_copies_file_into_target_directory(self, tmp_path):
+    def test_op_paste_copies_file_into_target_directory(self, tmp_path):
         from peovim.ui.tree_view import TreeNode
 
         api = _make_api()
@@ -519,14 +523,17 @@ class TestExplorerCommands:
         controller._clipboard_path = source
         controller._clipboard_mode = "copy"
         node = TreeNode(label="dest", value=str(dest_dir), children_fn=lambda: [])
+        controller = _controller_with_selection(api, node)
+        controller._root = tmp_path
+        controller._clipboard_path = source
+        controller._clipboard_mode = "copy"
 
-        handled = controller._on_tree_key("p", node)
+        controller.op_paste()
 
-        assert handled
         assert source.exists()
         assert (dest_dir / "copy.txt").read_text(encoding="utf-8") == "copy"
 
-    def test_tree_key_p_in_same_directory_opens_copy_rename_prompt(self, tmp_path, monkeypatch):
+    def test_op_paste_in_same_directory_opens_copy_rename_prompt(self, tmp_path, monkeypatch):
         from peovim.ui.tree_view import TreeNode
 
         api = _make_api()
@@ -534,20 +541,21 @@ class TestExplorerCommands:
         controller._root = tmp_path
         source = tmp_path / "copy.txt"
         source.write_text("copy", encoding="utf-8")
-        controller._clipboard_path = source
-        controller._clipboard_mode = "copy"
         prompts = []
         monkeypatch.setattr(api, "open_cmdline", lambda initial="", prompt=":": prompts.append((prompt, initial)))
         node = TreeNode(label="copy.txt", value=str(source), children_fn=None)
+        controller = _controller_with_selection(api, node)
+        controller._root = tmp_path
+        controller._clipboard_path = source
+        controller._clipboard_mode = "copy"
 
-        handled = controller._on_tree_key("p", node)
+        controller.op_paste()
 
-        assert handled
         assert prompts == [(":", "ExplorerCopyAs copy copy.txt")]
         assert controller._pending_copy_source == source
         assert controller._pending_copy_destination_dir == tmp_path
 
-    def test_tree_key_p_moves_file_into_target_directory(self, tmp_path):
+    def test_op_paste_moves_file_into_target_directory(self, tmp_path):
         from peovim.ui.tree_view import TreeNode
 
         api = _make_api()
@@ -559,13 +567,14 @@ class TestExplorerCommands:
         source.write_text("move", encoding="utf-8")
         dest_dir = tmp_path / "dest"
         dest_dir.mkdir()
+        node = TreeNode(label="dest", value=str(dest_dir), children_fn=lambda: [])
+        controller = _controller_with_selection(api, node)
+        controller._root = tmp_path
         controller._clipboard_path = source
         controller._clipboard_mode = "move"
-        node = TreeNode(label="dest", value=str(dest_dir), children_fn=lambda: [])
 
-        handled = controller._on_tree_key("p", node)
+        controller.op_paste()
 
-        assert handled
         assert not source.exists()
         assert (dest_dir / "move.txt").read_text(encoding="utf-8") == "move"
         assert controller._clipboard_path == dest_dir / "move.txt"
@@ -662,34 +671,32 @@ class TestExplorerHelpers:
         assert _suggest_copy_name("copy.txt") == "copy copy.txt"
         assert _suggest_copy_name("folder") == "folder copy"
 
-    def test_tree_key_r_opens_rename_prompt(self, tmp_path, monkeypatch):
+    def test_op_rename_opens_rename_prompt(self, tmp_path, monkeypatch):
         from peovim.ui.tree_view import TreeNode
 
         api = _make_api()
-        controller = _ExplorerController(api)
         prompts = []
         monkeypatch.setattr(api, "open_cmdline", lambda initial="", prompt=":": prompts.append((prompt, initial)))
         target = tmp_path / "name.txt"
         target.write_text("", encoding="utf-8")
         node = TreeNode(label="name.txt", value=str(target), children_fn=None)
+        controller = _controller_with_selection(api, node)
 
-        handled = controller._on_tree_key("r", node)
+        controller.op_rename()
 
-        assert handled
         assert prompts == [(":", "ExplorerRename name.txt")]
 
-    def test_tree_key_d_opens_delete_confirmation(self, tmp_path, monkeypatch):
+    def test_op_delete_opens_delete_confirmation(self, tmp_path, monkeypatch):
         from peovim.ui.tree_view import TreeNode
 
         api = _make_api()
-        controller = _ExplorerController(api)
         prompts = []
         monkeypatch.setattr(api, "open_cmdline", lambda initial="", prompt=":": prompts.append((prompt, initial)))
         target = tmp_path / "name.txt"
         target.write_text("", encoding="utf-8")
         node = TreeNode(label="name.txt", value=str(target), children_fn=None)
+        controller = _controller_with_selection(api, node)
 
-        handled = controller._on_tree_key("d", node)
+        controller.op_delete()
 
-        assert handled
         assert prompts == [(":", "ExplorerDelete")]

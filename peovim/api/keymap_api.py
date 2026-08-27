@@ -16,17 +16,17 @@ class KeymapAPI:  # cm:f2b8e7
     def __init__(self, registry: BindingRegistry) -> None:
         self._registry = registry
 
-    def nmap(self, keys: str, target: Any, desc: str = "") -> None:
-        """Register a normal-mode binding."""
-        self._registry.register("normal", keys, target, desc=desc)
+    def nmap(self, keys: str, target: Any, desc: str = "", *, scope: str = "") -> None:
+        """Register a normal-mode binding, optionally scoped to a sidebar panel."""
+        self._registry.register("normal", keys, target, desc=desc, scope=scope)
 
-    def vmap(self, keys: str, target: Any, desc: str = "") -> None:
-        """Register a visual-mode binding."""
-        self._registry.register("visual", keys, target, desc=desc)
+    def vmap(self, keys: str, target: Any, desc: str = "", *, scope: str = "") -> None:
+        """Register a visual-mode binding, optionally scoped to a sidebar panel."""
+        self._registry.register("visual", keys, target, desc=desc, scope=scope)
 
-    def imap(self, keys: str, target: Any, desc: str = "") -> None:
-        """Register an insert-mode binding."""
-        self._registry.register("insert", keys, target, desc=desc)
+    def imap(self, keys: str, target: Any, desc: str = "", *, scope: str = "") -> None:
+        """Register an insert-mode binding, optionally scoped to a sidebar panel."""
+        self._registry.register("insert", keys, target, desc=desc, scope=scope)
 
     def nunmap(self, keys: str) -> None:
         """Remove a normal-mode binding."""

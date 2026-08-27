@@ -108,6 +108,75 @@ class TestShowBindings:
         assert ("c", "Commentary: toggle comments on selection") in pairs
         assert ("b", "Some visual binding") in pairs
 
+    def test_panel_scoped_bindings_hidden_when_panel_not_focused(self):
+        b1 = _binding("<leader>Ea", "New file")
+        b1.scope = "explorer"
+        b2 = _binding("<leader>ff", "Find files")
+        api = _make_api([b1, b2])
+        api.ui.focused_sidebar_panel_name.return_value = None
+
+        _show_bindings(api, _LEADER, "normal")
+
+        pairs = api.ui.show_which_key.call_args.args[0]
+        next_keys = [k for k, _ in pairs]
+        assert "E" not in next_keys
+        assert "f" in next_keys
+
+    def test_panel_scoped_bindings_shown_when_panel_focused(self):
+        b1 = _binding("<leader>Ea", "New file")
+        b1.scope = "explorer"
+        b2 = _binding("<leader>ff", "Find files")
+        api = _make_api([b1, b2])
+        api.ui.focused_sidebar_panel_name.return_value = "explorer"
+
+        _show_bindings(api, _LEADER, "normal")
+
+        pairs = api.ui.show_which_key.call_args.args[0]
+        next_keys = [k for k, _ in pairs]
+        assert "E" in next_keys
+        assert "f" in next_keys
+
+    def test_sidebar_groups_allowlist_filters_global_groups(self):
+        bindings = [
+            _binding("<leader>pn", "New panel"),
+            _binding("<leader>wv", "Split"),
+            _binding("<leader>ca", "Code action"),
+        ]
+        api = _make_api(bindings)
+        api.ui.focused_sidebar_panel_name.return_value = "explorer"
+
+        def _get_option(name: str):
+            return "p w" if name == "which_key_sidebar_groups" else True
+
+        api.options.get.side_effect = _get_option
+
+        _show_bindings(api, _LEADER, "normal")
+
+        pairs = api.ui.show_which_key.call_args.args[0]
+        next_keys = [k for k, _ in pairs]
+        assert "p" in next_keys
+        assert "w" in next_keys
+        assert "c" not in next_keys
+
+    def test_allowlist_does_not_hide_scoped_bindings(self):
+        b1 = _binding("<leader>fn", "New file")
+        b1.scope = "explorer"
+        b2 = _binding("<leader>ca", "Code action")
+        api = _make_api([b1, b2])
+        api.ui.focused_sidebar_panel_name.return_value = "explorer"
+
+        def _get_option(name: str):
+            return "p w" if name == "which_key_sidebar_groups" else True
+
+        api.options.get.side_effect = _get_option
+
+        _show_bindings(api, _LEADER, "normal")
+
+        pairs = api.ui.show_which_key.call_args.args[0]
+        next_keys = [k for k, _ in pairs]
+        assert "f" in next_keys
+        assert "c" not in next_keys
+
 
 class TestSetup:
     def test_registers_which_key_command(self):

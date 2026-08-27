@@ -27,6 +27,12 @@ if TYPE_CHECKING:
 
 def setup(api: EditorAPI) -> None:
     api.options.define("which_key_enabled", bool, True, doc="Show which-key popup for pending key prefixes")
+    api.options.define(
+        "which_key_sidebar_groups",
+        str,
+        "",
+        doc="Space/comma-separated leader prefixes shown in which-key while a sidebar panel is focused",
+    )
     api.events.on("key_prefix_pending", lambda **kw: _on_prefix(api, **kw))
     api.events.on("key_prefix_done", lambda **kw: _hide(api))
     api.commands.register(
@@ -90,7 +96,15 @@ def _show_bindings(api: Any, prefix: str, mode: str) -> None:
     except Exception:
         return
 
+    active_panel = _active_sidebar_panel(api)
+    all_bindings = [b for b in all_bindings if _binding_visible(b, active_panel)]
+
     leader = _get_leader(api)
+
+    if active_panel is not None:
+        allowed = _sidebar_allowed_groups(api)
+        if allowed:
+            all_bindings = [b for b in all_bindings if _sidebar_group_allowed(b, allowed, leader)]
 
     def _exp(b: Any) -> str:
         return b.keys.replace("<leader>", leader).replace("<Leader>", leader)
@@ -162,6 +176,52 @@ def _get_leader(api: Any) -> str:
     except Exception:
         pass
     return "\\"
+
+
+def _active_sidebar_panel(api: Any) -> str | None:
+    """Return the focused sidebar panel name, or None when none is focused."""
+    try:
+        name = api.ui.focused_sidebar_panel_name()
+        return name if isinstance(name, str) else None
+    except Exception:
+        return None
+
+
+def _binding_visible(b: Any, active_panel: str | None) -> bool:
+    """Filter panel-scoped bindings to the currently focused panel."""
+    scope = getattr(b, "scope", "")
+    if not isinstance(scope, str) or not scope:
+        return True
+    if scope == "sidebar":
+        return active_panel is not None
+    return scope == active_panel
+
+
+def _sidebar_allowed_groups(api: Any) -> set[str]:
+    """Return the configured sidebar-visible leader prefixes (empty = show all)."""
+    try:
+        raw = api.options.get("which_key_sidebar_groups")
+    except Exception:
+        return set()
+    if not isinstance(raw, str) or not raw:
+        return set()
+    return {token for token in raw.replace(",", " ").split() if token}
+
+
+def _sidebar_group_allowed(b: Any, allowed: set[str], leader: str) -> bool:
+    """Keep scoped bindings; restrict global bindings to allowed leader groups."""
+    scope = getattr(b, "scope", "")
+    if isinstance(scope, str) and scope:
+        return True  # scoped bindings already filtered by _binding_visible
+    return _top_level_leader_key(b.keys, leader) in allowed
+
+
+def _top_level_leader_key(keys: str, leader: str) -> str:
+    """Return the first key token after the leader, or "" for non-leader keys."""
+    expanded = keys.replace("<leader>", leader).replace("<Leader>", leader)
+    if not expanded.startswith(leader):
+        return ""
+    return _first_key_token(expanded[len(leader) :])
 
 
 # ---------------------------------------------------------------------------

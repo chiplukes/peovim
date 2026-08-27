@@ -585,9 +585,10 @@ keymap.leader -> str          # set in init.py
 keymap.local_leader -> str
 
 # Standard mappings (all noremap by default)
-keymap.nmap(keys: str, action: str | Callable, desc: str = '') -> None
-keymap.imap(keys: str, action: str | Callable, desc: str = '') -> None
-keymap.vmap(keys: str, action: str | Callable, desc: str = '') -> None
+keymap.nmap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '') -> None
+keymap.imap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '') -> None
+keymap.vmap(keys: str, action: str | Callable, desc: str = '', *, scope: str = '') -> None
+# scope: '' = global, 'sidebar' = any focused sidebar panel, '<panel>' = that panel
 # planned: keymap.xmap(), keymap.omap(), keymap.tmap(), keymap.cmap()
 
 # Unmap (normal mode only; mode param planned)
@@ -1292,6 +1293,7 @@ ui.close_picker() -> None
 # Sidebar queries
 ui.get_sidebar_panel(name: str) -> Any
 ui.active_sidebar_panel_name() -> str | None
+ui.focused_sidebar_panel_name() -> str | None  # active panel when focused, else None
 ui.show_active_sidebar_panel(*, focus: bool = True) -> Any
 ```
 

@@ -99,6 +99,7 @@ class EditorAPI:  # cm:6d5a2c
         self.commands = CommandsAPI(command_registry, dispatcher)
         self.git = GitAPI()
         self.ui = UIAPI(float_manager, notify_manager, picker, which_key_panel=which_key_panel)
+        self._binding_registry.set_scope_resolver(lambda: self.ui.focused_sidebar_panel_name())
         self.git._notify_fn = self.ui.notify
         self.health = HealthAPI()
         self.session = SessionAPI(workspace, engine, dispatcher)
