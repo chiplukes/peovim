@@ -67,6 +67,7 @@ class InputController:
                     elif self.handle_key_event(event):
                         return
                 elif isinstance(event, MouseEvent):
+                    host.cancel_key_interceptors()
                     host._mouse_dispatcher.handle(event)
             except Exception as exc:
                 host._report_runtime_error("input handling", exc)

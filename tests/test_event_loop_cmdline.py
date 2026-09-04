@@ -1257,3 +1257,34 @@ def test_handle_overlay_key_skips_inactive_interceptor() -> None:
     consumed = event_loop._handle_overlay_key("a")
 
     assert consumed is False
+
+
+def test_cancel_key_interceptors_feeds_escape_to_active_only() -> None:
+    """A mouse click cancels active transient interceptors by feeding <Esc>,
+    leaving inactive ones untouched."""
+    event_loop, _backend, _doc, _window = _make_event_loop()
+
+    received: list[str] = []
+
+    class _SpyInterceptor:
+        is_active = True
+
+        def feed_key(self, key: str) -> bool:
+            received.append(key)
+            return True
+
+    class _Inactive:
+        is_active = False
+
+        def feed_key(self, key: str) -> bool:
+            raise AssertionError("inactive interceptor must not be fed")
+
+    active = _SpyInterceptor()
+    inactive = _Inactive()
+    event_loop.attach_key_interceptor(active)
+    event_loop.attach_key_interceptor(inactive)
+
+    event_loop.cancel_key_interceptors()
+
+    assert received == ["<Esc>"]
+    assert event_loop._key_interceptors == [active, inactive]

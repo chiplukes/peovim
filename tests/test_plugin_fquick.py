@@ -83,6 +83,10 @@ class TestSetup:
             assert "fj" in keys
             assert "fk" in keys
             assert "f/" in keys
+            assert "fP" in keys
+            assert "fp" in keys
+            assert "fn" in keys
+            assert "fi" in keys
 
             plug_names = [call.args[0] for call in api.keymap.define_plug.call_args_list]
             assert "FquickOlder" in plug_names
@@ -90,6 +94,10 @@ class TestSetup:
             assert "FquickSessionPickerDown" in plug_names
             assert "FquickSessionPickerUp" in plug_names
             assert "FquickWorkspacePicker" in plug_names
+            assert "FquickCopyFullPath" in plug_names
+            assert "FquickCopyRelPath" in plug_names
+            assert "FquickCopyFilename" in plug_names
+            assert "FquickFileInfo" in plug_names
 
             commands = [call.args[0] for call in api.commands.register.call_args_list]
             assert "FquickSession" in commands
@@ -228,3 +236,69 @@ class TestController:
             assert api.active_window().visible_range()[0] == 3
         finally:
             fquick.teardown()
+
+
+class TestPathHelpers:
+    def _controller(self, tmp_path: Path, active: Path):
+        from peovim.plugins.fquick import _FquickController
+
+        api = _make_api(tmp_path, active=active)
+        return _FquickController(api), api
+
+    def test_copy_full_path(self, tmp_path):
+        nested = tmp_path / "src" / "main.py"
+        nested.parent.mkdir()
+        nested.write_text("", encoding="utf-8")
+
+        controller, api = self._controller(tmp_path, nested)
+
+        controller.copy_full_path()
+
+        api.set_register.assert_called_with("+", str(nested), "char")
+
+    def test_copy_relative_path(self, tmp_path):
+        nested = tmp_path / "src" / "main.py"
+        nested.parent.mkdir()
+        nested.write_text("", encoding="utf-8")
+
+        controller, api = self._controller(tmp_path, nested)
+
+        controller.copy_relative_path()
+
+        api.set_register.assert_called_with("+", "src/main.py", "char")
+
+    def test_copy_filename(self, tmp_path):
+        nested = tmp_path / "main.py"
+        nested.write_text("", encoding="utf-8")
+
+        controller, api = self._controller(tmp_path, nested)
+
+        controller.copy_filename()
+
+        api.set_register.assert_called_with("+", "main.py", "char")
+
+    def test_file_info_notifies_with_relative_path(self, tmp_path):
+        nested = tmp_path / "src" / "main.py"
+        nested.parent.mkdir()
+        nested.write_text("", encoding="utf-8")
+
+        controller, api = self._controller(tmp_path, nested)
+
+        controller.file_info()
+
+        message = api.ui.notify.call_args.args[0]
+        assert str(nested) in message
+        assert "src/main.py" in message
+
+    def test_copy_helpers_warn_on_no_file(self, tmp_path):
+        from peovim.plugins.fquick import _FquickController
+
+        api = _make_api(tmp_path, active=None)
+        controller = _FquickController(api)
+
+        controller.copy_full_path()
+        controller.copy_filename()
+        controller.file_info()
+
+        assert api.ui.notify.call_count == 3
+        assert all(call.kwargs.get("level") == "warn" for call in api.ui.notify.call_args_list)

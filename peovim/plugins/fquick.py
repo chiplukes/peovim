@@ -9,6 +9,10 @@ Default normal-mode mappings:
     fj  - open a session-files picker (ready to move down with j)
     fk  - open a session-files picker (ready to move up with k)
     f/  - open a fuzzy workspace-files picker
+    fP  - copy full path to clipboard
+    fp  - copy relative path to clipboard
+    fn  - copy filename to clipboard
+    fi  - show file info popup
 
 This plugin is intentionally opinionated: when loaded, it repurposes the
 built-in ``f{char}`` motion prefix for file navigation.
@@ -270,9 +274,73 @@ class _FquickController:
         with contextlib.suppress(Exception):
             self._api.active_window().set_scroll_line(view.scroll_line)
 
-    def _notify(self, message: str) -> None:
+    # ------------------------------------------------------------------
+    # Path info / copy helpers (fP / fp / fi / fn)
+    # ------------------------------------------------------------------
+
+    def copy_full_path(self) -> None:
+        self._copy_path(full=True)
+
+    def copy_relative_path(self) -> None:
+        self._copy_path(full=False)
+
+    def copy_filename(self) -> None:
+        path = self._current_path()
+        if path is None:
+            self._notify("No file", level="warn")
+            return
+        self._yank(str(path.name), f"Copied: {path.name}")
+
+    def file_info(self) -> None:
+        path = self._current_path()
+        if path is None:
+            self._notify("No file", level="warn")
+            return
+        root = self._root()
+        if root is not None:
+            try:
+                rel = str(path.relative_to(root))
+            except ValueError:
+                rel = path.name
+        else:
+            rel = path.name
+        try:
+            size = path.stat().st_size if path.exists() else 0
+        except OSError:
+            size = 0
+        self._notify(
+            f"{path}\n{rel}\n{size} bytes  ext={path.suffix or '(none)'}",
+            level="info",
+        )
+
+    def _copy_path(self, *, full: bool) -> None:
+        path = self._current_path()
+        if path is None:
+            self._notify("No file", level="warn")
+            return
+        text = str(path) if full else self._relative_display(path)
+        self._yank(text, f"Copied: {text}")
+
+    def _relative_display(self, path: Path) -> str:
+        root = self._root()
+        if root is not None:
+            try:
+                return str(path.relative_to(root))
+            except ValueError:
+                pass
+        try:
+            return str(path.relative_to(Path.cwd()))
+        except ValueError:
+            return str(path)
+
+    def _yank(self, text: str, status: str) -> None:
         with contextlib.suppress(Exception):
-            self._api.ui.notify(message)
+            self._api.set_register("+", text, "char")
+        self._notify(status, level="info")
+
+    def _notify(self, message: str, *, level: str = "info") -> None:
+        with contextlib.suppress(Exception):
+            self._api.ui.notify(message, level=level)
 
     def _feed_picker(self, key: str) -> None:
         picker = getattr(self._api.ui, "_picker", None)
@@ -313,11 +381,22 @@ def setup(api: EditorAPI) -> None:
         desc="Fquick: workspace files",
     )
 
+    api.keymap.define_plug("FquickCopyFullPath", lambda: _controller.copy_full_path(), desc="Fquick: copy full path")
+    api.keymap.define_plug(
+        "FquickCopyRelPath", lambda: _controller.copy_relative_path(), desc="Fquick: copy relative path"
+    )
+    api.keymap.define_plug("FquickCopyFilename", lambda: _controller.copy_filename(), desc="Fquick: copy filename")
+    api.keymap.define_plug("FquickFileInfo", lambda: _controller.file_info(), desc="Fquick: file info")
+
     api.keymap.nmap("fh", "<Plug>FquickOlder", desc="Fquick older file")
     api.keymap.nmap("fl", "<Plug>FquickNewer", desc="Fquick newer file")
     api.keymap.nmap("fj", "<Plug>FquickSessionPickerDown", desc="Fquick session files")
     api.keymap.nmap("fk", "<Plug>FquickSessionPickerUp", desc="Fquick session files")
     api.keymap.nmap("f/", "<Plug>FquickWorkspacePicker", desc="Fquick workspace files")
+    api.keymap.nmap("fP", "<Plug>FquickCopyFullPath", desc="Fquick copy full path")
+    api.keymap.nmap("fp", "<Plug>FquickCopyRelPath", desc="Fquick copy relative path")
+    api.keymap.nmap("fn", "<Plug>FquickCopyFilename", desc="Fquick copy filename")
+    api.keymap.nmap("fi", "<Plug>FquickFileInfo", desc="Fquick file info")
 
     api.commands.register("FquickSession", lambda cmd, ctx: _controller.open_session_picker(), min_abbrev=8)
     api.commands.register("FquickWorkspace", lambda cmd, ctx: _controller.open_workspace_picker(), min_abbrev=9)

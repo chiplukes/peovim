@@ -209,6 +209,17 @@ class EventLoop:  # cm:e4d6b5
         with contextlib.suppress(ValueError):
             self._key_interceptors.remove(interceptor)
 
+    def cancel_key_interceptors(self) -> None:
+        """Cancel all active transient key interceptors (e.g. on a mouse click).
+
+        Feeds <Esc> to each active interceptor, which triggers their own cleanup
+        (closing floats and popping themselves from ``_key_interceptors``).
+        """
+        for interceptor in list(self._key_interceptors):
+            if getattr(interceptor, "is_active", False):
+                with contextlib.suppress(Exception):
+                    interceptor.feed_key("<Esc>")
+
     def window_rect(self, window: Any) -> Rect | None:
         """Return the last-computed screen ``Rect`` for ``window``, or None.
 

@@ -364,6 +364,36 @@ class TestExplorerWindowChooser:
         assert api.active_buffer().path == target.resolve()
         assert api.active_window().win_id == first_window.win_id
 
+    def test_open_selected_cancels_stale_chooser_on_second_open(self, tmp_path):
+        """Selecting another file while a chooser is pending must cancel the first
+        chooser instead of orphaning it and leaving its badges/interceptor behind."""
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        api.find_root = lambda markers=None: tmp_path
+        api._workspace.active_tab.split_vertical()
+        assert len(api.list_tab_windows()) == 2
+
+        target_a = tmp_path / "first.py"
+        target_b = tmp_path / "second.py"
+        target_a.write_text("# a\n")
+        target_b.write_text("# b\n")
+        controller = _ExplorerController(api)
+        controller._root = tmp_path
+
+        controller._open_selected(TreeNode(label="first.py", value=str(target_a)))
+        first_chooser = controller._window_chooser
+        assert first_chooser is not None and first_chooser.is_active
+        assert api._event_loop._key_interceptors == [first_chooser]
+
+        controller._open_selected(TreeNode(label="second.py", value=str(target_b)))
+
+        second_chooser = controller._window_chooser
+        assert second_chooser is not None and second_chooser is not first_chooser
+        assert not first_chooser.is_active
+        assert second_chooser.is_active
+        assert api._event_loop._key_interceptors == [second_chooser]
+
     def test_open_selected_opens_directly_with_single_window(self, tmp_path):
         from peovim.ui.tree_view import TreeNode
 

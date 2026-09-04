@@ -611,6 +611,7 @@ native = [
 dev = [
     { name = "mypy" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "setuptools" },
 ]
 
@@ -656,6 +657,7 @@ provides-extras = ["grammars", "native", "fast", "dev"]
 dev = [
     { name = "mypy", specifier = ">=2.1.0" },
     { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "setuptools", specifier = ">=82.0.1" },
 ]
 

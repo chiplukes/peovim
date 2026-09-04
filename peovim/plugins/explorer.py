@@ -240,11 +240,20 @@ class _ExplorerController:  # cm:1f4c6a
             if 1 < len(windows) <= len(_WINDOW_LABELS):
                 self._start_window_chooser(path, windows)
                 return
+            self._cancel_window_chooser()
             self._api.open_buffer(path)
             self._api.ui.blur_sidebar()
 
+    def _cancel_window_chooser(self) -> None:
+        chooser = self._window_chooser
+        self._window_chooser = None
+        if chooser is not None and getattr(chooser, "is_active", False):
+            chooser.feed_key("\x1b")
+
     def _start_window_chooser(self, path: pathlib.Path, windows: list) -> None:
         from peovim.ui.target_chooser import ChooserTarget, TargetChooser
+
+        self._cancel_window_chooser()
 
         def _make_activate(win: object):
             def _activate() -> None:

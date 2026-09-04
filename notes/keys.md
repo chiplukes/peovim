@@ -268,29 +268,6 @@ keymap.nmap("<C-q>", "<C-v>", desc="Visual block mode")
 
 ---
 
-## File Information
-
-Requires `peovim.plugins.editor_utils`. Default bindings use `<leader>lf*`; remapped here.
-
-| Key | `<Plug>` | Action |
-|-----|---------|--------|
-| `<leader>li` | `EditorFileInfo` | Show file info (path, size, type) |
-| `<leader>lc` | `EditorCopyPath` | Copy full path to clipboard |
-| `<leader>lr` | `EditorCopyRel` | Copy relative path to clipboard |
-
-Remapping example (from defaults):
-```python
-keymap.nunmap("<leader>lf")
-keymap.nunmap("<leader>lfc")
-keymap.nunmap("<leader>lfr")
-keymap.ngroup("<leader>l", "Location/File")
-keymap.nmap("<leader>li", "<Plug>EditorFileInfo", desc="File info")
-keymap.nmap("<leader>lc", "<Plug>EditorCopyPath",  desc="Copy full path")
-keymap.nmap("<leader>lr", "<Plug>EditorCopyRel",   desc="Copy relative path")
-```
-
----
-
 ## Which-Key
 
 Requires `peovim.plugins.which_key`. Shows all leader bindings in a float.
@@ -660,6 +637,10 @@ Requires `peovim.plugins.fquick`. Navigate recently-opened session files.
 | `fj` | `FquickSessionPickerDown` | Open session files picker (down) |
 | `fk` | `FquickSessionPickerUp` | Open session files picker (up) |
 | `f/` | `FquickWorkspacePicker` | Open workspace files picker |
+| `fP` | `FquickCopyFullPath` | Copy full path to clipboard |
+| `fp` | `FquickCopyRelPath` | Copy relative path to clipboard |
+| `fn` | `FquickCopyFilename` | Copy filename to clipboard |
+| `fi` | `FquickFileInfo` | Show file info (path, size, type) |
 
 ---
 
