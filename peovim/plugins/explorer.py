@@ -19,6 +19,7 @@ from peovim.ui.cell_grid import CellGrid
 if TYPE_CHECKING:
     from peovim.api.editor import EditorAPI
     from peovim.commands.parser import ParsedCommand
+    from peovim.ui.target_chooser import TargetChooser
     from peovim.ui.tree_view import TreeNode
 
 _controller: _ExplorerController | None = None
@@ -91,7 +92,7 @@ class _ExplorerController:  # cm:1f4c6a
         self._clipboard_mode: str | None = None
         self._pending_copy_source: pathlib.Path | None = None
         self._pending_copy_destination_dir: pathlib.Path | None = None
-        self._window_chooser: object | None = None
+        self._window_chooser: TargetChooser | None = None
 
     def toggle(self) -> None:
         self._root = self._api.find_root() or pathlib.Path.cwd()
@@ -247,7 +248,7 @@ class _ExplorerController:  # cm:1f4c6a
     def _cancel_window_chooser(self) -> None:
         chooser = self._window_chooser
         self._window_chooser = None
-        if chooser is not None and getattr(chooser, "is_active", False):
+        if chooser is not None and chooser.is_active:
             chooser.feed_key("\x1b")
 
     def _start_window_chooser(self, path: pathlib.Path, windows: list) -> None:

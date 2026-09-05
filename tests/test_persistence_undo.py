@@ -80,7 +80,6 @@ class TestUndoFileIO:
         assert loaded_dc == 0
 
     def test_undo_directory_size(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-
         undo_tmp = tmp_path / "undo_test"
         undo_tmp.mkdir()
 

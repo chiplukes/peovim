@@ -265,7 +265,7 @@ class TestPathHelpers:
 
         controller.copy_relative_path()
 
-        api.set_register.assert_called_with("+", "src/main.py", "char")
+        api.set_register.assert_called_with("+", str(nested.relative_to(tmp_path)), "char")
 
     def test_copy_filename(self, tmp_path):
         nested = tmp_path / "main.py"
@@ -288,7 +288,7 @@ class TestPathHelpers:
 
         message = api.ui.notify.call_args.args[0]
         assert str(nested) in message
-        assert "src/main.py" in message
+        assert str(nested.relative_to(tmp_path)) in message
 
     def test_copy_helpers_warn_on_no_file(self, tmp_path):
         from peovim.plugins.fquick import _FquickController
