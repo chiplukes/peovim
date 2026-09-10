@@ -67,7 +67,14 @@ hot rendering loops.
 
 ## Persistence model
 
-All persisted stores use atomic replace (temp-file + `os.replace()`).
+All persisted stores use atomic replace (temp-file + `os.replace()`), via
+`peovim.core.persistence.atomic_write_bytes`. If the containing directory
+doesn't allow creating a new temp file there (restrictive directory ACLs, some
+network mounts — the file itself may still be writable), it falls back to a
+direct, non-atomic write to the target path instead of failing the save. A
+failure after the temp file is successfully created (write or the final
+rename) is not downgraded this way; the original file is left untouched and
+the error is raised.
 
 | Store | Location | Policy |
 |---|---|---|
