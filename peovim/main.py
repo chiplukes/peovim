@@ -11,8 +11,47 @@ import asyncio
 import contextlib
 import logging
 import pathlib
+import re
 import sys
 import threading
+
+# Matches a trailing :LINE:COL or :LINE suffix, e.g. "foo.py:42:5" or "foo.py:42".
+# Tried in this order (longer/more-specific pattern first) so "foo.py:42:5" isn't
+# misread as path "foo.py:42" + line 5.
+_FILE_LINE_COL_RE = re.compile(r"^(.*):(\d+):(\d+)$")
+_FILE_LINE_RE = re.compile(r"^(.*):(\d+)$")
+
+
+def _parse_file_arg(tokens: list[str]) -> tuple[str | None, int | None, int | None]:
+    """Parse CLI positional args into (file, goto_line, goto_col), 0-indexed.
+
+    Supports two conventions for opening at a specific line:
+      - Vim-style: `peovim +42 file.py`
+      - grep/compiler-style: `peovim file.py:42` or `peovim file.py:42:5`
+    The literal path is always tried first, so a filename that happens to
+    contain a colon (and actually exists) is never misparsed.
+    """
+    goto_line: int | None = None
+    goto_col: int | None = None
+    file_arg: str | None = None
+    for tok in tokens:
+        m = re.fullmatch(r"\+(\d+)", tok)
+        if m:
+            goto_line = max(0, int(m.group(1)) - 1)
+            continue
+        file_arg = tok
+    if file_arg is not None and not pathlib.Path(file_arg).exists():
+        for pattern in (_FILE_LINE_COL_RE, _FILE_LINE_RE):
+            m = pattern.match(file_arg)
+            if m and pathlib.Path(m.group(1)).exists():
+                groups = m.groups()
+                file_arg = groups[0]
+                if goto_line is None:
+                    goto_line = max(0, int(groups[1]) - 1)
+                if len(groups) > 2:
+                    goto_col = max(0, int(groups[2]) - 1)
+                break
+    return file_arg, goto_line, goto_col
 
 
 def _init_logging(
@@ -115,7 +154,13 @@ def _shada_save(shada, marks, registers, workspace=None, jumplist=None) -> None:
 
 def main() -> None:  # cm:a3f1b2
     parser = argparse.ArgumentParser(prog="peovim", description="Modal text editor")
-    parser.add_argument("file", nargs="?", help="File to open")
+    parser.add_argument(
+        "targets",
+        nargs="*",
+        metavar="[+LINE] file",
+        help="File to open, optionally at a specific line: `+42 file.py` (Vim-style) "
+        "or `file.py:42` / `file.py:42:5` (line[:col])",
+    )
     parser.add_argument("--log", action="store_true", help="Enable debug logging to file")
     parser.add_argument(
         "--log-level",
@@ -161,7 +206,8 @@ def main() -> None:  # cm:a3f1b2
     from peovim.ui.backend_factory import create_backend
     from peovim.ui.event_loop import EventLoop
 
-    path = pathlib.Path(args.file).resolve() if args.file else None
+    file_arg, goto_line, goto_col = _parse_file_arg(args.targets)
+    path = pathlib.Path(file_arg).resolve() if file_arg else None
     startup_root: pathlib.Path | None = None
     if path and path.is_dir():
         # Directory argument (e.g. "peovim .") — open empty buffer but anchor project root.
@@ -174,6 +220,13 @@ def main() -> None:  # cm:a3f1b2
 
     window = Window(doc)
     window.options["fileformat"] = doc.fileformat
+    if path is not None and goto_line is not None:
+        line = min(goto_line, max(0, doc.line_count() - 1))
+        col = min(goto_col or 0, len(doc.get_line(line)))
+        window.cursor.line = line
+        window.cursor.col = col
+        window.cursor.clamp(doc._table)
+        window.scroll_to_cursor()
     workspace = Workspace(window)
     registers = RegisterStore()
     marks = MarkStore()
@@ -265,6 +318,9 @@ def main() -> None:  # cm:a3f1b2
     # every subsequent buffer_opened event (e.g. triggered by Ctrl-O navigating back),
     # which would otherwise override the jumplist-restored cursor position.
     _shada_restored_bufs: set[int] = set()
+    if path is not None and goto_line is not None:
+        # An explicit `+N` / `file:N` CLI target wins over the shada-remembered position.
+        _shada_restored_bufs.add(id(doc))
 
     def _on_buffer_opened(**kwargs):
         buf_id = kwargs.get("buf_id")

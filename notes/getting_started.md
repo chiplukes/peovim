@@ -46,8 +46,11 @@ uvx pre-commit install   # activates lint/format hooks on every commit
 ## Running the editor (development)
 
 ```bash
-uv run peovim          # open an empty buffer
-uv run peovim file.py  # open a specific file
+uv run peovim               # open an empty buffer
+uv run peovim file.py       # open a specific file
+uv run peovim +42 file.py   # open file.py with the cursor on line 42 (Vim-style)
+uv run peovim file.py:42    # same, grep/compiler-style (file:line)
+uv run peovim file.py:42:5  # same, plus column 5
 ```
 
 ## Native renderer (optional Cython acceleration)
