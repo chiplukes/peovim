@@ -165,8 +165,15 @@ def handle_repeat_block_insert(d: ActionDispatcher, action: RepeatBlockInsert, d
         for offset in range(row_count):
             line_no = insert_line + offset
             d._ensure_line_exists(doc, line_no)
-            d._ensure_line_length(doc, line_no, insert_col)
-            doc.insert(line_no, insert_col, action.text)
+            if action.delete_count:
+                line_text = doc.get_line(line_no)
+                del_start = min(insert_col, len(line_text))
+                del_end = min(insert_col + action.delete_count, len(line_text))
+                if del_end > del_start:
+                    doc.delete(line_no, del_start, line_no, del_end)
+            if action.text:
+                d._ensure_line_length(doc, line_no, insert_col)
+                doc.insert(line_no, insert_col, action.text)
 
     cur.move_to(insert_line, insert_col)
     d._clamp_cursor_for_mode(doc)

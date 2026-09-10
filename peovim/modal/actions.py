@@ -238,6 +238,7 @@ class RepeatBlockInsert(Action):
     row_count: int
     col: int
     text: str
+    delete_count: int = 0  # characters to delete at `col` (before inserting `text`) on each row
 
 
 @dataclass(frozen=True)

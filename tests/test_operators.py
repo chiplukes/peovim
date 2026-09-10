@@ -269,6 +269,68 @@ class TestVisualBlockOperators:
         assert s.text() == "aZZlpha\nbZZeta\ngZZamma"
         assert s.mode() == Mode.NORMAL
 
+    def test_visual_block_I_with_forward_delete_replays_delete_and_insert(self):
+        # Typing then pressing <Del> into the pre-existing text is diffed against
+        # the line's pre-insert baseline: the deleted character and the inserted
+        # text are both recovered and replayed on the other rows, at the same
+        # column, not just the net-length-delta portion.
+        s = EditorSession("alpha\nbeta\ngamma")
+        s.engine.set_cursor(0, 1)
+        s.window.cursor.move_to(0, 1)
+        s.type("<C-v>")
+        s.engine.set_cursor(2, 3)
+        s.window.cursor.move_to(2, 3)
+
+        s.type("IZZ<Del><Esc>")
+
+        assert s.text() == "aZZpha\nbZZta\ngZZmma"
+        assert s.mode() == Mode.NORMAL
+
+    def test_visual_block_I_with_only_deletes_replays_delete_on_every_row(self):
+        # A block insert that only deletes (no typing) still replays the deleted
+        # span onto every other selected row, at the same column.
+        s = EditorSession("alpha\nbeta\ngamma")
+        s.engine.set_cursor(0, 1)
+        s.window.cursor.move_to(0, 1)
+        s.type("<C-v>")
+        s.engine.set_cursor(2, 3)
+        s.window.cursor.move_to(2, 3)
+
+        s.type("I<Del><Del><Esc>")
+
+        assert s.text() == "aha\nba\ngma"
+        assert s.mode() == Mode.NORMAL
+
+    def test_visual_block_I_replaces_word_across_rows(self):
+        # Select a column over "class", delete it, and type a replacement word.
+        # The delete+insert replays on every selected row.
+        s = EditorSession("class Foo\nclass Bar\nclass Baz")
+        s.engine.set_cursor(0, 0)
+        s.window.cursor.move_to(0, 0)
+        s.type("<C-v>")
+        s.engine.set_cursor(2, 0)
+        s.window.cursor.move_to(2, 0)
+
+        s.type("I<Del><Del><Del><Del><Del>bass<Esc>")
+
+        assert s.text() == "bass Foo\nbass Bar\nbass Baz"
+        assert s.mode() == Mode.NORMAL
+
+    def test_visual_block_I_replace_word_dot_repeat_reapplies(self):
+        s = EditorSession("class Foo\nclass Bar\nclass Baz\nclass Qux")
+        s.engine.set_cursor(0, 0)
+        s.window.cursor.move_to(0, 0)
+        s.type("<C-v>")
+        s.engine.set_cursor(1, 0)
+        s.window.cursor.move_to(1, 0)
+
+        s.type("I<Del><Del><Del><Del><Del>bass<Esc>")
+        s.engine.set_cursor(2, 0)
+        s.window.cursor.move_to(2, 0)
+        s.type(".")
+
+        assert s.text() == "bass Foo\nbass Bar\nbass Baz\nbass Qux"
+
     def test_visual_block_A_pads_short_lines_and_replays_insert(self):
         s = EditorSession("abcd\nx\ndefg")
         s.engine.set_cursor(0, 0)

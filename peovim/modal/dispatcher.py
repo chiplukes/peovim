@@ -117,6 +117,7 @@ class _PendingBlockInsert:
     col: int
     source_line: int
     baseline_text: str | None = None
+    baseline_line_count: int | None = None
 
 
 @dataclass
@@ -398,6 +399,7 @@ class ActionDispatcher:  # cm:7a5d8b
             return
         self._ensure_line_length(doc, pending.source_line, pending.col)
         pending.baseline_text = doc.get_line(pending.source_line)
+        pending.baseline_line_count = doc.line_count()
         cur.move_to(pending.source_line, pending.col)
 
     def _replay_pending_block_insert(self, doc: Document) -> None:
@@ -405,30 +407,59 @@ class ActionDispatcher:  # cm:7a5d8b
         if pending is None or pending.baseline_text is None:
             return
 
+        # Diff the source line against its pre-insert baseline to recover the net
+        # edit (deleted span + inserted text), then replay that same edit at the
+        # same column on every other covered line. Using a real prefix/suffix diff
+        # (rather than only tracking net growth) means a block edit that deletes
+        # existing text and retypes something shorter/different — e.g. select a
+        # column, <S-i>, <Del><Del>, type replacement text, <Esc> — still replays
+        # on every line, not just the one under the cursor.
+        if doc.line_count() != pending.baseline_line_count:
+            return  # a newline was inserted (e.g. <CR>); line numbers are no longer reliable
+
         source_line = min(pending.source_line, doc.line_count() - 1)
         current_text = doc.get_line(source_line)
-        suffix = pending.baseline_text[pending.col :]
-        if "\n" in current_text or not current_text.endswith(suffix):
+        baseline = pending.baseline_text
+        if "\n" in current_text:
             return
 
-        inserted_end = len(current_text) - len(suffix)
-        if inserted_end < pending.col:
+        start = pending.col
+        prefix_end = min(len(baseline), len(current_text))
+        i = start
+        while i < prefix_end and baseline[i] == current_text[i]:
+            i += 1
+        old_end = len(baseline)
+        new_end = len(current_text)
+        while old_end > i and new_end > i and baseline[old_end - 1] == current_text[new_end - 1]:
+            old_end -= 1
+            new_end -= 1
+
+        delete_count = old_end - i
+        inserted_text = current_text[i:new_end]
+        if not delete_count and not inserted_text:
             return
-        inserted_text = current_text[pending.col : inserted_end]
-        if not inserted_text or "\n" in inserted_text:
+        if "\n" in inserted_text:
             return
 
         self._dot_repeat = RepeatBlockInsert(
             row_count=(pending.end_line - pending.start_line + 1),
-            col=pending.col,
+            col=i,
             text=inserted_text,
+            delete_count=delete_count,
         )
 
         for line_no in range(pending.start_line, pending.end_line + 1):
             if line_no == source_line or line_no >= doc.line_count():
                 continue
-            self._ensure_line_length(doc, line_no, pending.col)
-            doc.insert(line_no, pending.col, inserted_text)
+            if delete_count:
+                line_text = doc.get_line(line_no)
+                del_start = min(i, len(line_text))
+                del_end = min(i + delete_count, len(line_text))
+                if del_end > del_start:
+                    doc.delete(line_no, del_start, line_no, del_end)
+            if inserted_text:
+                self._ensure_line_length(doc, line_no, i)
+                doc.insert(line_no, i, inserted_text)
 
     def _clamp_cursor_for_mode(self, doc: Document) -> None:
         normal_mode = self.engine.mode not in {Mode.INSERT, Mode.REPLACE}

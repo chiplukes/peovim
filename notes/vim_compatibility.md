@@ -363,8 +363,8 @@ _Status: ~ partial — `zf`, `zo`/`zO`, `zc`, `za`, `zR`, `zM`, `zd` implemented
 | (all motions) | extend selection |
 | `d` / `c` / `y` | delete / change / yank selection |
 | `r{c}` | replace all chars in selection |
-| `I` | insert at start of each block line |
-| `A` | append at end of each block line |
+| `I` | insert at start of each block line _(diffed replay, see below — intentionally diverges from Vim)_ |
+| `A` | append at end of each block line _(diffed replay, see below — intentionally diverges from Vim)_ |
 | `p` / `P` | paste (block mode only) _(char/line visual paste not implemented)_ |
 | `J` | join selected lines _(not implemented)_ |
 | `u` / `U` | lower/uppercase selection |
@@ -372,6 +372,18 @@ _Status: ~ partial — `zf`, `zo`/`zO`, `zc`, `za`, `zR`, `zM`, `zd` implemented
 | `>` / `<` | indent/dedent |
 | `=` | auto-indent _(not implemented)_ |
 | `!{cmd}` | filter selection through cmd _(not implemented)_ |
+
+Block `I`/`A` replay: on leaving Insert mode, the edited (first/last) line is diffed
+against its pre-insert snapshot (common prefix + common suffix, i.e. a minimal
+edit), giving a `(column, deleted_count, inserted_text)` triple that is replayed
+at the same column on every other selected line. This intentionally differs from
+real Vim, which only replays a pure net-length-growth heuristic and drops any
+edit that deletes into pre-existing text. Here, "select a column, `I`, delete a
+word, type a replacement" (the common `vscode-vim`-style block-edit workflow)
+replays the deletion and the retyped text on every line, not just the one under
+the cursor. Implementation: `ActionDispatcher._replay_pending_block_insert` in
+`peovim/modal/dispatcher.py`. A block edit that inserts a literal newline still
+does not replay (line numbers become unreliable once the line count changes).
 
 ---
 
