@@ -114,3 +114,24 @@ class Conceal:
 
 # Union alias
 DecorationSet = list
+
+
+def virtual_line_spans_for_document(editor_state: object, document: object) -> list[tuple[int, int]]:
+    """Merged (after_line, count) spans for all `VirtualLine` decorations on
+    `document` (any namespace — this is a layout concern, not specific to
+    whichever plugin added them). [] if there are none.
+
+    Shared by anything that needs to reason about where a buffer line actually
+    renders once virtual-line padding is accounted for — see
+    `peovim.core.virtual_lines` for the buffer-line/visual-row conversion this
+    feeds, and `window_render_controller.py` / `cursor_controller.py` for the
+    two current consumers (scroll positioning and the terminal cursor's screen
+    row, respectively — both used to silently ignore virtual lines).
+    """
+    from peovim.core.virtual_lines import merge_virtual_line_spans
+
+    if editor_state is None:
+        return []
+    decs = editor_state.decorations.get_for_buffer(id(document))  # type: ignore[attr-defined]
+    anchors = [(dec.after_line, dec.count) for dec in decs if isinstance(dec, VirtualLine)]
+    return merge_virtual_line_spans(anchors) if anchors else []

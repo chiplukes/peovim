@@ -91,7 +91,22 @@ class TerminalCursorController:
         if active_rect is None:
             return None
 
-        line_offset = active_window.cursor.line - active_window.scroll_line
+        from peovim.core.virtual_lines import buffer_line_to_visual_row
+        from peovim.ui.decorations import virtual_line_spans_for_document
+
+        spans = virtual_line_spans_for_document(host._editor_state, active_window.document)
+        # Same drift sync_window_render_state() had: cursor.line/scroll_line are plain
+        # buffer indices, unaware of the blank VirtualLine rows compare.py inserts to
+        # keep diff panes aligned, so naive subtraction lands the *real terminal*
+        # cursor (used whenever cursorblink or a bar insert-cursor is active — the
+        # painted cursor cell this skips is a separate, already-fixed code path) on
+        # the wrong screen row once any fall between scroll_line and cursor.line.
+        if spans:
+            line_offset = buffer_line_to_visual_row(active_window.cursor.line, spans) - buffer_line_to_visual_row(
+                active_window.scroll_line, spans
+            )
+        else:
+            line_offset = active_window.cursor.line - active_window.scroll_line
         if not (0 <= line_offset < active_rect.height):
             return None
 

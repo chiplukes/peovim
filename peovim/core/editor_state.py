@@ -96,6 +96,10 @@ class EditorState:  # cm:7b9e5f
         self.alt_path: str | None = None  # alternate file (previous buffer path, for :bd)
         self.alt_cursor: tuple[int, int] = (0, 0)  # cursor position saved alongside alt_path
         self.compare_status: dict[str, Any] | None = None
+        # win_id pair for an active diff/compare or proposed-review split, if any. Consulted
+        # by EditorAPI.goto_location() so cross-file jumps open a new split instead of
+        # clobbering a diff pane.
+        self.compare_window_ids: tuple[int, int] | None = None
         self.recovery_store: object | None = None  # set to RecoveryStore after startup
 
     @property

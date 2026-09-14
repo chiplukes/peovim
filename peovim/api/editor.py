@@ -370,7 +370,19 @@ class EditorAPI:  # cm:6d5a2c
         return len(self._workspace.active_tab.all_windows())
 
     def activate_window(self, window: Any) -> None:
-        """Focus an existing window and sync dispatcher/engine state to it."""
+        """Focus an existing window and sync dispatcher/engine state to it.
+
+        Callers (compare.py, proposed_review.py, explorer, flash, window-focus keys,
+        ...) typically set the target window's cursor/scroll directly and then call
+        this last, outside of a dispatch cycle. Without an immediate engine resync
+        here, the modal engine's cached document/cursor/scroll stay pointed at the
+        *previously* active window until the next real keypress — so that keypress
+        (e.g. the first j/k after switching panes) computes its move against the
+        wrong document's line count and the wrong starting cursor position, landing
+        on a bogus line/column. `_sync_post_dispatch_state` is the same resync the
+        dispatcher performs after every ordinary dispatch; call it here too so there
+        is no window where engine state and the actually-focused window can diverge.
+        """
         target = getattr(window, "_window", window)
         for index, tab in enumerate(self._workspace.tabs):
             if target not in tab.all_windows():
@@ -378,6 +390,7 @@ class EditorAPI:  # cm:6d5a2c
             self._workspace.active_tab_index = index
             tab.focus_window(target)
             self._dispatcher.window = target
+            self._dispatcher._sync_post_dispatch_state()
             return
         raise ValueError("Window not found in workspace")
 
@@ -446,10 +459,18 @@ class EditorAPI:  # cm:6d5a2c
         return None
 
     def open_buffer(self, path: str | pathlib.Path, line: int = 0, col: int = 0) -> None:
-        """Open a file in the active window and optionally move the cursor."""
+        """Open a file in the active window and optionally move the cursor.
+
+        If the active window is half of a diff/compare split and `path` resolves to a
+        different file than what it currently shows, opens a new split first instead of
+        replacing the pane's buffer — see `set_compare_windows`. This covers every caller
+        (explorer, pickers, goto_location, alternate-file, panel "open file" actions, ...)
+        in one place rather than requiring each to opt in individually.
+        """
         from peovim.modal.actions import OpenBuffer
 
         target = pathlib.Path(path).resolve()
+        self._split_for_compare_jump_if_needed(target)
         self._dispatcher.dispatch([OpenBuffer(str(target))])
 
         win = self._workspace.active_window
@@ -511,12 +532,41 @@ class EditorAPI:  # cm:6d5a2c
 
         self._dispatcher.dispatch([PasteRegister(name, before=before)])
 
-    def split_window(self, direction: str = "v", path: str | pathlib.Path | None = None) -> None:
-        """Split the active window horizontally or vertically."""
+    def split_window(
+        self, direction: str = "v", path: str | pathlib.Path | None = None, *, at_edge: bool = False
+    ) -> None:
+        """Split the active window horizontally or vertically.
+
+        at_edge: add the new window at the far edge of the whole tab instead of
+        splitting the active window in place — see Tab.split_vertical_at_edge.
+        """
         from peovim.modal.actions import SplitWindow
 
         buffer_path = str(pathlib.Path(path).resolve()) if path is not None else None
-        self._dispatcher.dispatch([SplitWindow(cast(Literal["h", "v"], direction), buffer_path=buffer_path)])
+        self._dispatcher.dispatch(
+            [SplitWindow(cast(Literal["h", "v"], direction), buffer_path=buffer_path, at_edge=at_edge)]
+        )
+
+    def _split_for_compare_jump_if_needed(self, target: pathlib.Path) -> None:
+        """Open a new split instead of replacing the active window's buffer if it is one
+        half of an active diff/compare split and `target` is a different file.
+
+        Called from open_buffer(), so it covers every caller that opens a file out of a
+        diff pane (LSP jumps via goto_location, explorer, pickers, fquick, local history,
+        alternate-file, panel "open file" actions, ...) — not just navigation-specific
+        code. Without this, opening a different file while in a diff pane would load it
+        directly into that pane, silently swapping out one side of the diff and leaving
+        the session's window/buffer bookkeeping pointed at content that's no longer part
+        of the comparison.
+
+        at_edge=True: append the split at the far right of the whole tab rather than
+        splitting whichever diff pane is active — otherwise jumping from the *left*
+        pane would insert the new window between the two diff panes, separating them.
+        """
+        from peovim.core.compare_jump import should_split_for_compare_jump
+
+        if should_split_for_compare_jump(self._editor_state, self._workspace, target):
+            self.split_window("v", at_edge=True)
 
     def close_window(self) -> None:
         """Close the active window."""
@@ -623,6 +673,15 @@ class EditorAPI:  # cm:6d5a2c
     def set_compare_status(self, status: dict[str, Any] | None) -> None:
         """Publish or clear compare-mode statusline state."""
         self._editor_state.compare_status = status
+
+    def set_compare_windows(self, window_ids: tuple[int, int] | None) -> None:
+        """Register the window ids of an active diff/compare (or proposed-review) split.
+
+        goto_location() consults this to avoid clobbering a diff pane: jumping to a
+        different file while focused in one of these windows opens a new split instead
+        of replacing the pane's buffer, which would desync the diff session.
+        """
+        self._editor_state.compare_window_ids = window_ids
 
     # ------------------------------------------------------------------
     # Working directory

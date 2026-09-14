@@ -357,27 +357,49 @@ Requires `peovim.plugins.compare`. Default bindings use `<leader>c*`; remapped h
 | `<leader>d1` | `CompareSelect1` | Select current file as diff target 1 |
 | `<leader>d2` | `CompareSelect2` | Select current file as diff target 2 |
 | `<leader>dc` | `CompareSelected` | Launch side-by-side diff |
+| `<leader>dw` | `GitsignsDiffHead` | Diff current buffer against last commit (HEAD) — see `peovim.plugins.gitsigns`, requires no `git status` entry |
 | `<leader>dj` | `CompareNextDiff` | Jump to next diff block |
 | `<leader>dk` | `ComparePrevDiff` | Jump to previous diff block |
 | `<leader>ds` | `CompareStop` | Stop diff session and clear decorations |
 | `<leader>dm12` | `CompareMerge12` | Merge active diff block left → right |
 | `<leader>dm21` | `CompareMerge21` | Merge active diff block right → left |
+| `<leader>dr` | `CompareRefresh` | Manually resync diff blocks/decorations against current buffer content |
 | `]c` | `CompareNextDiff` | Next diff block (Vim-style alias) |
 | `[c` | `ComparePrevDiff` | Previous diff block (Vim-style alias) |
 
+Editing a diff pane (without saving or merging) auto-resyncs blocks and decorations ~400ms
+after you stop typing (debounced, mirrors gitsigns' buffer_changed handling), so highlights
+stay aligned with what's actually in the buffer. `<leader>dr` / `CompareRefresh` forces an
+immediate resync without waiting for the debounce. Neither moves the cursor — only merge
+(`dm12`/`dm21`) and save reposition the view, since those are deliberate actions with the
+cursor already at rest.
+
+Opening a different file while focused in a diff pane — LSP `gd`/references/etc., outline
+goto, marker goto, codemap, workspace symbols, Verilog hierarchy, explorer, the file/buffer
+pickers, `fquick`, local history, `Ctrl-^` alternate-file, git/SVN status panel "open file" —
+opens it in a new split instead of replacing the pane's buffer. This is enforced centrally in
+`EditorAPI.open_buffer()` (see `peovim.core.compare_jump`), so it applies to every caller, not
+just LSP jumps. The one exception is `LspUiAdapter.goto_location` (the code path `gd`/
+references/etc. actually use for a single-result jump), which bypasses `open_buffer()` and so
+carries its own copy of the same guard. Opening the same file the pane already shows just
+moves the cursor as normal, and the diff session's own setup/teardown is unaffected (it clears
+`compare_window_ids` before opening its panes).
+
 Remapping example (moving off the default `<leader>c*` prefix):
 ```python
-for _k in ("<leader>c1","<leader>c2","<leader>cc","<leader>cj","<leader>ck","<leader>cs"):
+for _k in ("<leader>c1","<leader>c2","<leader>cc","<leader>cj","<leader>ck","<leader>cs","<leader>cr"):
     keymap.nunmap(_k)
 keymap.ngroup("<leader>d", "Diff")
 keymap.nmap("<leader>d1",   "<Plug>CompareSelect1",  desc="Compare file 1")
 keymap.nmap("<leader>d2",   "<Plug>CompareSelect2",  desc="Compare file 2")
 keymap.nmap("<leader>dc",   "<Plug>CompareSelected", desc="Compare selected files")
+keymap.nmap("<leader>dw",   "<Plug>GitsignsDiffHead", desc="Diff working file vs HEAD")
 keymap.nmap("<leader>dj",   "<Plug>CompareNextDiff", desc="Next diff")
 keymap.nmap("<leader>dk",   "<Plug>ComparePrevDiff", desc="Prev diff")
 keymap.nmap("<leader>ds",   "<Plug>CompareStop",     desc="Stop compare")
 keymap.nmap("<leader>dm12", "<Plug>CompareMerge12",  desc="Merge left→right")
 keymap.nmap("<leader>dm21", "<Plug>CompareMerge21",  desc="Merge right→left")
+keymap.nmap("<leader>dr",   "<Plug>CompareRefresh",  desc="Refresh diff")
 keymap.nmap("]c", "<Plug>CompareNextDiff", desc="Next diff")
 keymap.nmap("[c", "<Plug>ComparePrevDiff", desc="Prev diff")
 ```
@@ -424,6 +446,7 @@ Requires `peovim.plugins.gitsigns`. Shows git change gutters and supports hunk n
 | `]c` | `GitsignsNextHunk` | Jump to next git hunk |
 | `[c` | `GitsignsPrevHunk` | Jump to previous git hunk |
 | `<leader>gs` | `GitsignsStatusPanel` | Toggle git status panel |
+| — | `GitsignsDiffHead` | Diff a file (default: active buffer) against HEAD; no default key, see `:GitDiffHead` — bound to `<leader>dw` in the Diff/Compare group above |
 
 > **Note:** `]c` / `[c` are also the default next/prev diff block keys in the compare plugin. If both plugins are loaded, whichever is loaded last wins for those keys. Remap one to avoid the conflict.
 
@@ -879,6 +902,7 @@ See [§Plugin: Proposed Edit Review](#plugin-proposed-edit-review) for review ke
 | `:GitCommit <message>` | Create a git commit with the given message |
 | `:GitLog [ref]` | Open scratch git log browser |
 | `:GitDiffFile <path>` | Diff git status file against HEAD |
+| `:GitDiffHead [path]` | Diff a file (default: active buffer) against HEAD — works even with no working-tree changes |
 | `:GitStageFile <path>` | Stage file |
 | `:GitUnstageFile <path>` | Unstage file |
 | `:GitDiscardFile <path>` | Discard file changes |

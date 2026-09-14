@@ -140,6 +140,50 @@ class TabPage:
         self._active_leaf = new_leaf
         return new_win
 
+    def split_horizontal_at_edge(self) -> Window:
+        """Add a new window as the bottom pane of the *whole tab*, instead of
+        splitting the active window in place. For a caller that wants its new
+        window to sit alongside an existing multi-window layout (e.g. jumping
+        out of one half of a diff/compare split) without interposing itself
+        between panes that belong together — see split_vertical_at_edge().
+        """
+        from peovim.core.window import Window
+
+        active_win = self._active_leaf.window
+        new_win = Window(active_win.document, width=active_win.width, height=active_win.height)
+        new_win.cursor.line = active_win.cursor.line
+        new_win.cursor.col = active_win.cursor.col
+        new_win.scroll_line = active_win.scroll_line
+        new_win.scroll_col = active_win.scroll_col
+        new_leaf = WindowLeaf(new_win)
+        self.root = HSplitNode(self.root, new_leaf)
+        self._active_leaf = new_leaf
+        return new_win
+
+    def split_vertical_at_edge(self) -> Window:
+        """Add a new window as the rightmost pane of the *whole tab*, instead of
+        splitting the active window in place.
+
+        split_vertical() always splits whichever leaf is active — fine normally,
+        but wrong for e.g. `gd` out of the left half of a diff/compare view: it
+        would insert the new window *between* the diff's two panes. This wraps
+        the entire existing layout on the left and appends the new pane on the
+        right, regardless of which leaf was active, keeping panes that belong
+        together adjacent.
+        """
+        from peovim.core.window import Window
+
+        active_win = self._active_leaf.window
+        new_win = Window(active_win.document, width=active_win.width, height=active_win.height)
+        new_win.cursor.line = active_win.cursor.line
+        new_win.cursor.col = active_win.cursor.col
+        new_win.scroll_line = active_win.scroll_line
+        new_win.scroll_col = active_win.scroll_col
+        new_leaf = WindowLeaf(new_win)
+        self.root = VSplitNode(self.root, new_leaf)
+        self._active_leaf = new_leaf
+        return new_win
+
     # ------------------------------------------------------------------
     # Close
     # ------------------------------------------------------------------

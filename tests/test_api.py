@@ -324,6 +324,60 @@ class TestEditorAPI:
         assert api.active_buffer().path == source.resolve()
         assert api.active_window().cursor == (0, 1)
 
+    def test_open_buffer_opens_new_split_when_active_window_is_a_compare_pane(self, tmp_path):
+        # Covers every open_buffer caller (explorer, pickers, panel "open file" actions,
+        # fquick, local_history, ...), not just goto_location — see compare_jump.py.
+        api = _make_api("alpha\n")
+        source = tmp_path / "source.txt"
+        target = tmp_path / "target.txt"
+        source.write_text("alpha\n", encoding="utf-8")
+        target.write_text("beta\n", encoding="utf-8")
+
+        api.open_buffer(source)
+        active_win = api._workspace.active_window
+        api.set_compare_windows((id(active_win), id(active_win)))
+
+        api.open_buffer(target)
+
+        windows = api._workspace.active_tab.all_windows()
+        assert len(windows) == 2
+        paths = {w.document.path for w in windows}
+        assert paths == {source.resolve(), target.resolve()}
+
+    def test_open_buffer_does_not_split_for_same_file_in_compare_pane(self, tmp_path):
+        api = _make_api("alpha\nbeta\n")
+        source = tmp_path / "source.txt"
+        source.write_text("alpha\nbeta\n", encoding="utf-8")
+        api.open_buffer(source)
+        active_win = api._workspace.active_window
+        api.set_compare_windows((id(active_win), id(active_win)))
+
+        api.open_buffer(source, line=1, col=0)
+
+        windows = api._workspace.active_tab.all_windows()
+        assert len(windows) == 1
+        assert api.active_window().cursor == (1, 0)
+
+    def test_open_alternate_buffer_splits_when_active_window_is_a_compare_pane(self, tmp_path):
+        # Ctrl-^ goes through open_alternate_buffer -> open_buffer.
+        api = _make_api("alpha\n")
+        source = tmp_path / "source.txt"
+        target = tmp_path / "target.txt"
+        source.write_text("alpha\n", encoding="utf-8")
+        target.write_text("beta\n", encoding="utf-8")
+
+        api.open_buffer(source)
+        api.open_buffer(target)
+        active_win = api._workspace.active_window
+        api.set_compare_windows((id(active_win), id(active_win)))
+
+        assert api.open_alternate_buffer() is True
+
+        windows = api._workspace.active_tab.all_windows()
+        assert len(windows) == 2
+        paths = {w.document.path for w in windows}
+        assert paths == {source.resolve(), target.resolve()}
+
     def test_register_helpers_round_trip(self):
         api = _make_api()
 
@@ -366,6 +420,109 @@ class TestEditorAPI:
         api.goto_location(target, line=0, col=2)
 
         assert api._dispatcher.jumplist.current() == (str(target.resolve()), 0, 2, 0)
+
+    def test_set_compare_windows_stores_and_clears(self):
+        api = _make_api()
+
+        api.set_compare_windows((1, 2))
+        assert api._editor_state.compare_window_ids == (1, 2)
+
+        api.set_compare_windows(None)
+        assert api._editor_state.compare_window_ids is None
+
+    def test_goto_location_opens_new_split_when_active_window_is_a_compare_pane(self, tmp_path):
+        api = _make_api("alpha\n")
+        source = tmp_path / "source.txt"
+        target = tmp_path / "target.txt"
+        source.write_text("alpha\n", encoding="utf-8")
+        target.write_text("beta\n", encoding="utf-8")
+
+        api.open_buffer(source)
+        active_win = api._workspace.active_window
+        api.set_compare_windows((id(active_win), id(active_win)))
+
+        api.goto_location(target, line=0, col=0)
+
+        windows = api._workspace.active_tab.all_windows()
+        assert len(windows) == 2
+        paths = {w.document.path for w in windows}
+        assert paths == {source.resolve(), target.resolve()}
+        assert api.active_buffer().path == target.resolve()
+
+    def test_goto_location_does_not_split_for_same_file_jump_in_compare_pane(self, tmp_path):
+        api = _make_api("alpha\nbeta\n")
+        source = tmp_path / "source.txt"
+        source.write_text("alpha\nbeta\n", encoding="utf-8")
+        api.open_buffer(source)
+        active_win = api._workspace.active_window
+        api.set_compare_windows((id(active_win), id(active_win)))
+
+        api.goto_location(source, line=1, col=0)
+
+        windows = api._workspace.active_tab.all_windows()
+        assert len(windows) == 1
+        assert api.active_window().cursor == (1, 0)
+
+    def test_goto_location_keeps_compare_panes_adjacent_when_jumping_from_left_pane(self, tmp_path):
+        # Regression: splitting whichever pane happens to be active would insert the
+        # new window *between* the diff's two panes when gd was pressed in the left
+        # one, separating them (left, new, right) instead of keeping them together.
+        api = _make_api("alpha\n")
+        left = tmp_path / "left.txt"
+        right = tmp_path / "right.txt"
+        target = tmp_path / "target.txt"
+        left.write_text("alpha\n", encoding="utf-8")
+        right.write_text("beta\n", encoding="utf-8")
+        target.write_text("gamma\n", encoding="utf-8")
+
+        api.open_buffer(left)
+        api.commands.execute("vsplit")
+        api.open_buffer(right)
+        left_win = next(w for w in api._workspace.active_tab.all_windows() if w.document.path == left.resolve())
+        right_win = next(w for w in api._workspace.active_tab.all_windows() if w.document.path == right.resolve())
+        api.set_compare_windows((id(left_win), id(right_win)))
+        api.activate_window(next(w for w in api.list_windows() if w._window is left_win))
+
+        api.goto_location(target, line=0, col=0)
+
+        windows = api._workspace.active_tab.all_windows()
+        assert [w.document.path for w in windows] == [left.resolve(), right.resolve(), target.resolve()]
+        assert api.active_buffer().path == target.resolve()
+
+    def test_goto_location_keeps_compare_panes_adjacent_when_jumping_from_right_pane(self, tmp_path):
+        api = _make_api("alpha\n")
+        left = tmp_path / "left.txt"
+        right = tmp_path / "right.txt"
+        target = tmp_path / "target.txt"
+        left.write_text("alpha\n", encoding="utf-8")
+        right.write_text("beta\n", encoding="utf-8")
+        target.write_text("gamma\n", encoding="utf-8")
+
+        api.open_buffer(left)
+        api.commands.execute("vsplit")
+        api.open_buffer(right)  # right pane ends up active here
+        left_win = next(w for w in api._workspace.active_tab.all_windows() if w.document.path == left.resolve())
+        right_win = next(w for w in api._workspace.active_tab.all_windows() if w.document.path == right.resolve())
+        api.set_compare_windows((id(left_win), id(right_win)))
+
+        api.goto_location(target, line=0, col=0)
+
+        windows = api._workspace.active_tab.all_windows()
+        assert [w.document.path for w in windows] == [left.resolve(), right.resolve(), target.resolve()]
+        assert api.active_buffer().path == target.resolve()
+
+    def test_goto_location_does_not_split_outside_a_compare_session(self, tmp_path):
+        api = _make_api("alpha\n")
+        source = tmp_path / "source.txt"
+        target = tmp_path / "target.txt"
+        source.write_text("alpha\n", encoding="utf-8")
+        target.write_text("beta\n", encoding="utf-8")
+
+        api.open_buffer(source)
+        api.goto_location(target, line=0, col=0)
+
+        windows = api._workspace.active_tab.all_windows()
+        assert len(windows) == 1
 
     def test_open_cmdline_uses_event_loop_widget(self):
         api = _make_api()
@@ -436,6 +593,55 @@ class TestEditorAPI:
 
         assert api.active_window().win_id == target_window.win_id
         assert api.active_buffer().path == target.resolve()
+
+    def test_activate_window_resyncs_engine_so_next_keypress_lands_correctly(self, tmp_path):
+        # Regression (reported as: opening a diff view then pressing k/j made the
+        # cursor "bounce" to columns that didn't match what was on screen). Root
+        # cause: ex-commands (":vsplit", ":only", ...) apply their actions via
+        # ExCommandContext.dispatch(), which intentionally bypasses
+        # ActionDispatcher.dispatch()'s post-sync (see dispatcher_ex_commands.py) —
+        # so after one, dispatcher.window/the modal engine's cached document/cursor
+        # can lag behind workspace.active_window. compare.py's flows (and this test)
+        # defensively call activate_window(active_window()) right after each such
+        # ex-command specifically to correct that — but activate_window() itself
+        # used to only fix dispatcher.window, never the engine's cached state, so
+        # the correction was a no-op for the engine. The very next keypress (e.g.
+        # the first j/k after a diff view opens) then computed its move against
+        # that stale engine cursor/document, landing on a bogus line/column.
+        left = tmp_path / "left.txt"  # e.g. the HEAD snapshot pane — long file
+        right = tmp_path / "right.txt"  # e.g. the working-file pane — short file
+        left.write_text("\n".join(f"left-{i}" for i in range(50)) + "\n", encoding="utf-8")
+        right.write_text("right-only\n", encoding="utf-8")
+
+        api = _make_api("alpha\n")
+
+        # Mirrors compare.py's open_selected_compare() exactly.
+        api.commands.execute("only")
+        api.activate_window(api.active_window())
+        api.open_buffer(left)
+        api.commands.execute("vsplit")
+        api.activate_window(api.active_window())
+        api.open_buffer(right)
+
+        left_window = next(win for win in api.list_windows() if win.buffer().path == left.resolve())
+        right_window = next(win for win in api.list_windows() if win.buffer().path == right.resolve())
+        api.activate_window(left_window)
+
+        # Mirrors _align_to_first_block(): position both cursors directly, then
+        # activate the left pane last — both outside of a dispatch cycle.
+        left_window.set_cursor(40, 0)
+        right_window.set_cursor(0, 0)
+        api.activate_window(left_window)
+
+        def _press(key: str) -> None:
+            actions = api._engine.feed_key(key)
+            if actions:
+                api._dispatcher.dispatch(actions)
+
+        _press("k")
+
+        assert api.active_buffer().path == left.resolve()
+        assert api.active_window().cursor == (39, 0)
 
     def test_window_overlay_helpers_use_window_identity(self):
         from peovim.core.style import Style

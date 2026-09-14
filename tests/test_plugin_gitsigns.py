@@ -81,6 +81,7 @@ class TestSetup:
         assert "GitDiscardFile" in cmd_names
         assert "GitCompareFile" in cmd_names
         assert "GitDiffFile" in cmd_names
+        assert "GitDiffHead" in cmd_names
         assert "gitpanel" in cmd_names
         assert "githunkpreview" in cmd_names
         assert "gitstagunk" in cmd_names
@@ -527,6 +528,88 @@ class TestCommands:
 
         assert snapshot_path.is_relative_to((repo / ".peovim").resolve())
         assert snapshot_path.read_text(encoding="utf-8") == "safe\n"
+
+
+class TestDiffHead:
+    """GitDiffHead / <leader>dw — diff a file against HEAD without needing a status entry."""
+
+    def test_diff_head_uses_active_buffer_when_no_args(self, tmp_path):
+        from peovim.plugins.gitsigns import _cmd_diff_head
+
+        repo = tmp_path / "repo"
+        target = repo / "src" / "app.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("print('new')\n", encoding="utf-8")
+
+        api, buf = _make_api(buf_path=target)
+        buf.path = target
+        api.git.root.return_value = repo
+        api.git.show_file_text.return_value = "print('old')\n"
+
+        assert _cmd_diff_head(api, "") is True
+
+        api.git.show_file_text.assert_called_once_with("src/app.py", path=repo, ref="HEAD")
+        kwargs = api.events.emit.call_args.kwargs
+        assert kwargs["right"] == str(target.resolve())
+        assert Path(kwargs["left"]).read_text(encoding="utf-8") == "print('old')\n"
+
+    def test_diff_head_uses_explicit_path_argument(self, tmp_path):
+        from peovim.plugins.gitsigns import _cmd_diff_head
+
+        repo = tmp_path / "repo"
+        target = repo / "src" / "other.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("print('new')\n", encoding="utf-8")
+
+        api, buf = _make_api(buf_path=repo / "README.md")
+        buf.path = repo / "README.md"
+        api.git.root.return_value = repo
+        api.git.show_file_text.return_value = "print('old')\n"
+
+        assert _cmd_diff_head(api, str(target)) is True
+
+        kwargs = api.events.emit.call_args.kwargs
+        assert kwargs["right"] == str(target.resolve())
+
+    def test_diff_head_writes_empty_snapshot_for_untracked_file(self, tmp_path):
+        from peovim.plugins.gitsigns import _cmd_diff_head
+
+        repo = tmp_path / "repo"
+        target = repo / "src" / "new.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("print('brand new')\n", encoding="utf-8")
+
+        api, buf = _make_api(buf_path=target)
+        buf.path = target
+        api.git.root.return_value = repo
+        api.git.show_file_text.return_value = None  # not present at HEAD
+
+        assert _cmd_diff_head(api, "") is True
+
+        kwargs = api.events.emit.call_args.kwargs
+        assert Path(kwargs["left"]).read_text(encoding="utf-8") == ""
+
+    def test_diff_head_requires_a_file_backed_buffer(self):
+        from peovim.plugins.gitsigns import _cmd_diff_head
+
+        api, buf = _make_api(buf_path=None)
+        buf.path = None
+
+        assert _cmd_diff_head(api, "") is False
+        api.events.emit.assert_not_called()
+
+    def test_diff_head_requires_a_git_repository(self, tmp_path):
+        from peovim.plugins.gitsigns import _cmd_diff_head
+
+        target = tmp_path / "app.py"
+        target.write_text("print('x')\n", encoding="utf-8")
+
+        api, buf = _make_api(buf_path=target)
+        buf.path = target
+        api.git.root.return_value = None
+
+        assert _cmd_diff_head(api, "") is False
+        api.events.emit.assert_not_called()
 
 
 class TestStatusSidebar:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass
@@ -90,6 +91,7 @@ class _CompareController:
         self._slot2: Path | None = None
         self._session: _CompareSession | None = None
         self._pre_diff_state: _PreDiffState | None = None
+        self._resync_timer: Any = None
 
     def select_slot(self, slot: int) -> None:
         path = self._current_file()
@@ -276,6 +278,70 @@ class _CompareController:
             f"Diff refreshed: {self._display_path(session.left_path)} ↔ {self._display_path(session.right_path)}",
         )
 
+    def on_buffer_changed(self, buf_id: int = 0, **_kwargs: Any) -> None:
+        """buffer_changed → debounced resync of blocks/decorations while the user edits.
+
+        Editing a diff pane without saving used to leave `session.blocks` and the
+        highlight/sign/virtual-line decorations pinned to line numbers from when the
+        session opened (or was last merged/saved), so every subsequent edit drifted
+        further out of sync with the actual buffer content. Debounced like gitsigns'
+        buffer_changed handler so rapid typing doesn't recompute on every keystroke.
+        """
+        session = self._session
+        if session is None:
+            return
+        if buf_id not in (session.left_buf_id, session.right_buf_id):
+            return
+        self._cancel_resync_timer()
+        try:
+            loop = asyncio.get_event_loop()
+            self._resync_timer = loop.call_later(0.4, self._soft_resync)
+        except RuntimeError:
+            self._soft_resync()
+
+    def refresh_session(self) -> None:
+        """Manual refresh (<leader>dr): immediate resync, bypassing the debounce."""
+        if self._session is None:
+            _set_status(self._api, "No active diff")
+            return
+        self._cancel_resync_timer()
+        self._soft_resync()
+        if self._session is not None:
+            _set_status(self._api, "Diff refreshed")
+
+    def _cancel_resync_timer(self) -> None:
+        timer = self._resync_timer
+        self._resync_timer = None
+        if timer is not None:
+            with contextlib.suppress(Exception):
+                timer.cancel()
+
+    def _soft_resync(self) -> None:
+        """Recompute diff blocks and redecorate in place — no cursor/scroll movement.
+
+        Unlike `_refresh_session` (used after merge/save, a deliberate action with the
+        cursor at rest), this must not fight the user's cursor while they are actively
+        editing a pane.
+        """
+        self._resync_timer = None
+        left_window, right_window = self._session_windows()
+        if left_window is None or right_window is None:
+            self._clear_session_decorations()
+            _set_status(self._api, "Diff session ended")
+            return
+
+        blocks = self._recompute_and_decorate(left_window, right_window)
+        session = self._session
+        if session is not None:
+            side = self._active_compare_side()
+            if side is not None:
+                current_line = self._api.active_window().cursor[0]
+                active = self._active_block(side, current_line, preferred_index=session.current_block_index)
+                session.current_block_index = active[0] if active is not None else None
+            elif session.current_block_index is not None:
+                session.current_block_index = min(session.current_block_index, len(blocks) - 1) if blocks else None
+        self._publish_statusline_state(left_window, right_window)
+
     def _capture_view(self) -> _PreDiffState:
         """Snapshot the active buffer path, cursor, and scroll for later restoration."""
         try:
@@ -329,16 +395,21 @@ class _CompareController:
             return str(path)
 
     def _clear_session_decorations(self) -> None:
-        if self._session is None:
-            return
-        for buf_id in (self._session.left_buf_id, self._session.right_buf_id):
-            buf = self._api.buffer_by_id(buf_id)
-            if buf is None:
-                continue
-            buf.clear_namespace(_NAMESPACE)
-            buf.clear_namespace(_HINT_NAMESPACE)
-        self._session = None
+        self._cancel_resync_timer()
+        session = self._session
+        if session is not None:
+            for buf_id in (session.left_buf_id, session.right_buf_id):
+                buf = self._api.buffer_by_id(buf_id)
+                if buf is None:
+                    continue
+                buf.clear_namespace(_NAMESPACE)
+                buf.clear_namespace(_HINT_NAMESPACE)
+            self._session = None
+        # Unconditional even when this plugin's own session was already None: another
+        # split-view plugin (e.g. proposed_review) may still hold stale compare_window_ids,
+        # and we're about to build (or have just torn down) a session of our own either way.
         self._api.set_compare_status(None)
+        self._api.set_compare_windows(None)
 
     def _normalized_selection_order(self, slot1: Path, slot2: Path) -> tuple[Path, Path]:
         windows = self._api.list_tab_windows()
@@ -421,8 +492,8 @@ class _CompareController:
             self._session = None
             return
 
-        self._move_window_to_block(left_window, target, side="left")
-        self._move_window_to_block(right_window, target, side="right")
+        self._move_window_to_block(left_window, session.blocks, target, side="left")
+        self._move_window_to_block(right_window, session.blocks, target, side="right")
         session.current_block_index = target_index
         self._activate_window(left_window if side == "left" else right_window)
         _set_status(
@@ -546,6 +617,24 @@ class _CompareController:
                 return index, block
         return None
 
+    def _recompute_and_decorate(self, left_window: Any, right_window: Any) -> tuple[CompareBlock, ...]:
+        """Recompute diff blocks from current buffer content and redecorate both panes.
+
+        Shared by `_refresh_session` (merge/save — repositions the cursor afterwards)
+        and `_soft_resync` (live edits/manual refresh — leaves the cursor alone).
+        """
+        left_buf = left_window.buffer()
+        right_buf = right_window.buffer()
+        blocks = compute_blocks(left_buf.get_lines(), right_buf.get_lines())
+        self._decorate_blocks(left_buf, right_buf, blocks)
+        if self._session is not None:
+            self._session.blocks = blocks
+            self._session.left_buf_id = left_buf.buf_id
+            self._session.right_buf_id = right_buf.buf_id
+            self._session.left_window_id = left_window.win_id
+            self._session.right_window_id = right_window.win_id
+        return blocks
+
     def _decorate_blocks(self, left_buf: Any, right_buf: Any, blocks: tuple[CompareBlock, ...]) -> None:
         left_buf.clear_namespace(_NAMESPACE)
         left_buf.clear_namespace(_HINT_NAMESPACE)
@@ -577,15 +666,58 @@ class _CompareController:
     def _activate_window(self, window: Any) -> None:
         self._api.activate_window(window)
 
-    def _move_window_to_block(self, window: Any, block: CompareBlock, *, side: str) -> None:
+    def _move_window_to_block(
+        self, window: Any, blocks: tuple[CompareBlock, ...], block: CompareBlock, *, side: str
+    ) -> None:
         line = block_anchor(block, side)
-        self._move_window_to_line(window, line)
+        self._move_window_to_line(window, blocks, side, line)
 
-    def _move_window_to_line(self, window: Any, line: int) -> None:
+    def _move_window_to_line(self, window: Any, blocks: tuple[CompareBlock, ...], side: str, line: int) -> None:
         target_line = min(line, max(0, window.buffer().line_count() - 1))
         window.set_cursor(target_line, 0)
-        window.set_scroll_line(max(0, target_line - 2))
-        window.scroll_to_cursor()
+        window.set_scroll_line(self._visual_scroll_line(window, blocks, side, target_line))
+
+    def _visual_scroll_line(self, window: Any, blocks: tuple[CompareBlock, ...], side: str, target_line: int) -> int:
+        """Compute a scroll_line (buffer-line units) that keeps `target_line` visible
+        with the configured scrolloff margin, accounting for this pane's virtual-line
+        padding (the blank rows compare.py inserts to keep the two panes aligned).
+
+        `Window.scroll_to_cursor()` reasons in raw buffer-line space only — it has no
+        notion of virtual lines — so whenever any fall between the viewport top and
+        the target line, its scrolloff math reserves the wrong number of screen rows
+        and the rendered cursor line drifts from what `cursor.line - scroll_line`
+        would suggest (reported as the cursor/text landing "off by a row" — visible in
+        gd/goto-definition jumping to the wrong line — after navigating a diff view).
+        Mirrors scroll_to_cursor()'s own algorithm, but converts to/from visual rows
+        via `_buffer_line_to_visual_row`/`_visual_row_to_buffer_line` so the padding is
+        correctly accounted for. With no blocks (or none between scroll and target),
+        visual rows equal buffer lines and this degrades to the same result.
+        """
+        height = max(1, window.get_height())
+        scrolloff = int(self._api.options.get("scrolloff") or 0)
+        target_visual = _buffer_line_to_visual_row(target_line, blocks, side)
+        current_visual = _buffer_line_to_visual_row(window.visible_range()[0], blocks, side)
+        if target_visual - scrolloff < current_visual:
+            new_visual = target_visual - scrolloff
+        elif target_visual + scrolloff >= current_visual + height:
+            new_visual = target_visual + scrolloff - height + 1
+        else:
+            new_visual = current_visual
+        scroll_line = _visual_row_to_buffer_line(max(0, new_visual), blocks, side)
+
+        # A virtual-line block wider than the available margin has no scroll_line that
+        # starts mid-block (scroll is buffer-line granular), so the snap above can land
+        # on the block's start anchor regardless of how far into it `new_visual` fell —
+        # which can leave target_line off-screen for a whole range of targets past a
+        # wide block. When that happens, prefer visibility over showing the full block:
+        # advance scroll_line line-by-line (bounded by target_line, so this always
+        # terminates) until target_line actually fits.
+        while (
+            scroll_line < target_line
+            and target_visual - _buffer_line_to_visual_row(scroll_line, blocks, side) >= height
+        ):
+            scroll_line += 1
+        return scroll_line
 
     def _replace_buffer_lines(self, window: Any, buf: Any, lines: list[str]) -> None:
         self._activate_window(window)
@@ -604,9 +736,7 @@ class _CompareController:
         merged_left_line: int | None = None,
         merged_right_line: int | None = None,
     ) -> None:
-        left_buf = left_window.buffer()
-        right_buf = right_window.buffer()
-        blocks = compute_blocks(left_buf.get_lines(), right_buf.get_lines())
+        blocks = self._recompute_and_decorate(left_window, right_window)
         self._debug(
             "refresh_session",
             focus_side=focus_side,
@@ -614,39 +744,41 @@ class _CompareController:
             fallback_line=fallback_line,
             blocks=len(blocks),
         )
-        self._decorate_blocks(left_buf, right_buf, blocks)
 
         if self._session is not None:
-            self._session.blocks = blocks
             self._session.current_block_index = (
                 None if merged_left_line is not None else (min(preferred_index, len(blocks) - 1) if blocks else None)
             )
-            self._session.left_buf_id = left_buf.buf_id
-            self._session.right_buf_id = right_buf.buf_id
-            self._session.left_window_id = left_window.win_id
-            self._session.right_window_id = right_window.win_id
 
         if merged_left_line is not None and merged_right_line is not None:
             self._move_window_to_line(
                 left_window,
+                blocks,
+                "left",
                 min(merged_left_line, max(0, left_window.buffer().line_count() - 1)),
             )
             self._move_window_to_line(
                 right_window,
+                blocks,
+                "right",
                 min(merged_right_line, max(0, right_window.buffer().line_count() - 1)),
             )
 
         elif blocks:
             block = blocks[min(preferred_index, len(blocks) - 1)]
-            self._move_window_to_block(left_window, block, side="left")
-            self._move_window_to_block(right_window, block, side="right")
+            self._move_window_to_block(left_window, blocks, block, side="left")
+            self._move_window_to_block(right_window, blocks, block, side="right")
         else:
             self._move_window_to_line(
                 left_window,
+                blocks,
+                "left",
                 min(fallback_line, max(0, left_window.buffer().line_count() - 1)),
             )
             self._move_window_to_line(
                 right_window,
+                blocks,
+                "right",
                 min(fallback_line, max(0, right_window.buffer().line_count() - 1)),
             )
 
@@ -703,6 +835,10 @@ class _CompareController:
                 "active_side": self._active_compare_side(),
             }
         )
+        # Lets goto_location() (LSP definition/references/etc.) know these two windows
+        # host a diff session, so jumping to a different file opens a new split instead
+        # of clobbering a diff pane and desyncing the session.
+        self._api.set_compare_windows((left_window.win_id, right_window.win_id))
 
     def _align_to_first_block(self, left_window: Any, right_window: Any, blocks: tuple[CompareBlock, ...]) -> None:
         if not blocks:
@@ -717,8 +853,8 @@ class _CompareController:
         first = blocks[0]
         left_line = first.left_start if first.left_count else max(0, first.left_start - 1)
         right_line = first.right_start if first.right_count else max(0, first.right_start - 1)
-        self._move_window_to_line(left_window, left_line)
-        self._move_window_to_line(right_window, right_line)
+        self._move_window_to_line(left_window, blocks, "left", left_line)
+        self._move_window_to_line(right_window, blocks, "right", right_line)
         self._activate_window(left_window)
 
 
@@ -752,6 +888,8 @@ def setup(api: EditorAPI) -> None:
     api.keymap.define_plug("DiffStop", lambda: _controller.stop_compare(), desc="Diff: stop")
     api.keymap.define_plug("DiffMerge12", lambda: _controller.merge_left_to_right(), desc="Diff: merge left to right")
     api.keymap.define_plug("DiffMerge21", lambda: _controller.merge_right_to_left(), desc="Diff: merge right to left")
+    api.keymap.define_plug("CompareRefresh", lambda: _controller.refresh_session(), desc="Diff: refresh")
+    api.keymap.define_plug("DiffRefresh", lambda: _controller.refresh_session(), desc="Diff: refresh")
 
     api.keymap.nmap("<leader>c1", "<Plug>CompareSelect1", desc="Diff: select file 1")
     api.keymap.nmap("<leader>c2", "<Plug>CompareSelect2", desc="Diff: select file 2")
@@ -763,6 +901,7 @@ def setup(api: EditorAPI) -> None:
     api.keymap.nmap("<leader>cs", "<Plug>CompareStop", desc="Diff: stop")
     api.keymap.nmap("<leader>m12", "<Plug>CompareMerge12", desc="Diff: merge left to right")
     api.keymap.nmap("<leader>m21", "<Plug>CompareMerge21", desc="Diff: merge right to left")
+    api.keymap.nmap("<leader>cr", "<Plug>CompareRefresh", desc="Diff: refresh")
 
     api.commands.register("CompareSelect1", lambda cmd, ctx: _controller.select_slot(1), min_abbrev=10)
     api.commands.register("CompareSelect2", lambda cmd, ctx: _controller.select_slot(2), min_abbrev=10)
@@ -782,9 +921,12 @@ def setup(api: EditorAPI) -> None:
     api.commands.register("DiffDebug", lambda cmd, ctx: _controller.debug_session(), min_abbrev=9)
     api.commands.register("DiffMerge12", lambda cmd, ctx: _controller.merge_left_to_right(), min_abbrev=10)
     api.commands.register("DiffMerge21", lambda cmd, ctx: _controller.merge_right_to_left(), min_abbrev=10)
+    api.commands.register("CompareRefresh", lambda cmd, ctx: _controller.refresh_session(), min_abbrev=15)
+    api.commands.register("DiffRefresh", lambda cmd, ctx: _controller.refresh_session(), min_abbrev=11)
     api.events.on("compare_selection_ready", lambda **kwargs: _controller.open_selected_compare(**kwargs))
     api.events.on("diff_selection_ready", lambda **kwargs: _controller.open_selected_compare(**kwargs))
     api.events.on("buffer_saved", lambda **kwargs: _controller.on_buffer_saved(**kwargs))
+    api.events.on("buffer_changed", lambda **kwargs: _controller.on_buffer_changed(**kwargs))
     api.events.on("cursor_moved", lambda **kwargs: _controller.on_cursor_moved(**kwargs))
 
 

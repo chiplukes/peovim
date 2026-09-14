@@ -215,6 +215,7 @@ class ProposedEditReviewController:
                 buf.clear_namespace(_HINT_NAMESPACE)
         self._session = None
         self._api.set_compare_status(None)
+        self._api.set_compare_windows(None)
 
     def _session_windows(self) -> tuple[Any | None, Any | None]:
         session = self._session
@@ -328,6 +329,9 @@ class ProposedEditReviewController:
         if review is not None and review.file_count > 1:
             status["files"] = review.file_count
         self._api.set_compare_status(status)
+        # See compare.py's identical call: lets goto_location() open cross-file jumps in a
+        # new split instead of clobbering one of these panes.
+        self._api.set_compare_windows((session.current_window_id, session.proposed_window_id))
 
 
 def setup(api: EditorAPI) -> None:

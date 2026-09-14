@@ -33,7 +33,10 @@ def handle_workspace_action(dispatcher, action: object) -> bool:
 
     if isinstance(action, SplitWindow):
         tab = workspace.active_tab
-        new_win = tab.split_horizontal() if action.direction == "h" else tab.split_vertical()
+        if action.at_edge:
+            new_win = tab.split_horizontal_at_edge() if action.direction == "h" else tab.split_vertical_at_edge()
+        else:
+            new_win = tab.split_horizontal() if action.direction == "h" else tab.split_vertical()
         if action.buffer_path:
             from pathlib import Path
 

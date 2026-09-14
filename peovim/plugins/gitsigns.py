@@ -198,11 +198,13 @@ def setup(api: EditorAPI) -> None:  # cm:7e8b5d
     api.commands.register("GitDiscardFile", lambda cmd, ctx: _cmd_discard_file(api, cmd.args.strip()), min_abbrev=12)
     api.commands.register("GitCompareFile", lambda cmd, ctx: _cmd_compare_file(api, cmd.args.strip()), min_abbrev=11)
     api.commands.register("GitDiffFile", lambda cmd, ctx: _cmd_compare_file(api, cmd.args.strip()), min_abbrev=8)
+    api.commands.register("GitDiffHead", lambda cmd, ctx: _cmd_diff_head(api, cmd.args.strip()), min_abbrev=8)
 
     # Hunk navigation — also exposed as <Plug> for user remapping
     api.keymap.define_plug("GitsignsNextHunk", lambda: _next_hunk(api), desc="Git: next hunk")
     api.keymap.define_plug("GitsignsPrevHunk", lambda: _prev_hunk(api), desc="Git: previous hunk")
     api.keymap.define_plug("GitsignsStatusPanel", lambda: _toggle_status_panel(api), desc="Git: panel")
+    api.keymap.define_plug("GitsignsDiffHead", lambda: _cmd_diff_head(api, ""), desc="Git: diff working file vs HEAD")
     api.keymap.nmap("]c", "<Plug>GitsignsNextHunk", desc="Git: next hunk")
     api.keymap.nmap("[c", "<Plug>GitsignsPrevHunk", desc="Git: previous hunk")
     api.keymap.nmap("<leader>gs", "<Plug>GitsignsStatusPanel", desc="Git: panel")
@@ -874,13 +876,54 @@ def _cmd_compare_file(api: Any, args: str) -> bool:
     return True
 
 
+def _cmd_diff_head(api: Any, args: str) -> bool:
+    """Diff a file (default: the active buffer) against its last commit (HEAD).
+
+    Unlike GitDiffFile/GitCompareFile, this does not require a git status entry —
+    it works even for files with no working-tree changes (matches plain `git diff`).
+    """
+    target_arg = args.strip()
+    if target_arg:
+        target_path = Path(target_arg).resolve()
+    else:
+        buf = api.active_buffer()
+        buf_path = getattr(buf, "path", None)
+        if buf_path is None:
+            api.ui.notify("Current buffer has no file", level="info")
+            return False
+        target_path = Path(buf_path).resolve()
+
+    root = _root_for_path(api, target_path)
+    if root is None:
+        api.ui.notify("Not in a git repository", level="info")
+        return False
+
+    if api.events.handler_count("diff_selection_ready") == 0:
+        api.ui.notify("Diff viewer not available (add peovim.plugins.compare to init.py)", level="info")
+        return False
+
+    try:
+        rel_path = target_path.relative_to(root).as_posix()
+    except ValueError:
+        api.ui.notify(f"File is outside the git repository: {target_path}", level="info")
+        return False
+
+    head_text = api.git.show_file_text(rel_path, path=root, ref="HEAD")
+    left_bucket = "head" if head_text is not None else "empty"
+    left_path = _write_compare_snapshot(root, left_bucket, rel_path, head_text or "")
+    api.events.emit("diff_selection_ready", left=str(left_path), right=str(target_path))
+    return True
+
+
+def _root_for_path(api: Any, path: Path) -> Path | None:
+    return api.git.root(path.parent if path.is_file() else path) or api.git.root()
+
+
 def _git_root(api: Any) -> Path | None:
     buf = api.active_buffer()
     path = getattr(buf, "path", None)
     if path is not None:
-        root = api.git.root(Path(path).parent if Path(path).is_file() else Path(path))
-        if root is not None:
-            return root
+        return _root_for_path(api, Path(path).resolve())
     return api.git.root()
 
 

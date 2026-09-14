@@ -257,6 +257,40 @@ def test_sync_window_render_state_keeps_cursor_visible_when_cursor_follow_enable
     assert window.scroll_line > 0
 
 
+def test_sync_window_render_state_accounts_for_virtual_lines(tmp_path) -> None:
+    # Regression: sync_window_render_state runs before every render frame and, with
+    # follow_cursor (the default) True, called Window.scroll_to_cursor() unconditionally
+    # — which reasons in raw buffer-line space and has no notion of VirtualLine
+    # decorations (compare.py's diff-alignment padding rows). That silently overrode any
+    # scroll position a caller (e.g. compare.py) had carefully computed, on every single
+    # frame — not a one-time glitch — leaving the cursor's real line rendered off-screen
+    # once enough virtual-line padding fell between the viewport top and the cursor.
+    # Reported as: after navigating a diff view, the cursor and displayed text end up
+    # "off by a row" (gd/goto-definition landing on the wrong line).
+    from peovim.core.style import Style
+    from peovim.core.virtual_lines import buffer_line_to_visual_row
+    from peovim.ui.decorations import VirtualLine
+
+    event_loop, _backend, doc, window = _make_event_loop("\n".join(f"line{i}" for i in range(60)) + "\n")
+    # 20 virtual rows anchored after buffer line 19 — e.g. compare.py padding an "insert"
+    # block so the two diff panes stay visually aligned.
+    event_loop._editor_state.decorations.add(id(doc), "test", VirtualLine(after_line=19, style=Style(), count=20))
+
+    window.cursor.move_to(25, 0)
+    window.scroll_line = 0
+    window.follow_cursor = True
+
+    event_loop._window_render_controller.sync_window_render_state(window, Rect(0, 0, 40, 24))
+
+    spans = [(19, 20)]
+    visual_cursor = buffer_line_to_visual_row(window.cursor.line, spans)
+    visual_scroll = buffer_line_to_visual_row(window.scroll_line, spans)
+    assert 0 <= visual_cursor - visual_scroll < 24, (
+        f"cursor's visual row {visual_cursor} not within "
+        f"[{visual_scroll}, {visual_scroll + 24}) — would render off-screen"
+    )
+
+
 def test_full_render_skips_clear_when_grid_is_new() -> None:
     event_loop, _backend, _doc, _window = _make_event_loop("hello\n")
     clear_flags: list[bool] = []
@@ -1081,6 +1115,32 @@ def test_terminal_cursor_state_uses_tab_expanded_display_columns() -> None:
 
     assert state is not None
     assert state[:2] == (0, 4)
+
+
+def test_terminal_cursor_state_accounts_for_virtual_lines() -> None:
+    # Regression: the real terminal cursor (used whenever cursorblink or a bar
+    # insert-cursor is active — this is a separate code path from the painted cursor
+    # cell, which sync_window_render_state already accounts for) computed its screen
+    # row as plain cursor.line - scroll_line, with no notion of VirtualLine decorations
+    # (compare.py's diff-alignment padding rows). Reported as: navigating a diff view,
+    # the blinking cursor visibly sits on the wrong line once any virtual rows fall
+    # between the viewport top and the cursor.
+    from peovim.core.style import Style
+    from peovim.ui.decorations import VirtualLine
+
+    event_loop, _backend, doc, window = _make_event_loop("\n".join(f"line{i}" for i in range(30)) + "\n")
+    event_loop._editor_state.decorations.add(id(doc), "test", VirtualLine(after_line=4, style=Style(), count=3))
+    event_loop._grid = CellGrid(40, 24)
+    event_loop._current_layout = {event_loop._workspace.active_tab.root: Rect(0, 0, 40, 24)}
+    window.cursor.move_to(6, 0)  # past the 3-row virtual gap anchored after line 4
+    window.options["cursorblink"] = True
+
+    state = event_loop._resolve_terminal_cursor_state()
+
+    assert state is not None
+    row, _col, _shape, _blink = state
+    # line 6 renders at visual row 5 (0..4 real) + 3 (virtual) + 1 (line 5) = 9.
+    assert row == 9
 
 
 def test_collect_window_render_jobs_materializes_spans_and_editor_decorations() -> None:

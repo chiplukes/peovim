@@ -116,7 +116,34 @@ class WindowRenderController:  # cm:9d6c3f
         max_scroll = max(0, window.document.line_count() - rect.height)
         window.scroll_line = max(0, min(window.scroll_line, max_scroll))
         if getattr(window, "follow_cursor", True):
-            window.scroll_to_cursor(text_width=self._text_width_for_window(window, rect.width, global_opts=global_opts))
+            spans = self._virtual_line_spans(window)
+            if spans:
+                # scroll_to_cursor() reasons in raw buffer-line space and has no notion
+                # of virtual lines, so its scrolloff math reserves the wrong number of
+                # rows whenever any fall between the viewport top and the cursor line —
+                # this runs every render frame, so a plain scroll_to_cursor() call here
+                # would silently re-introduce that drift on top of any caller (e.g.
+                # compare.py) that positioned the window correctly. See
+                # peovim.core.virtual_lines for the accounting.
+                from peovim.core.virtual_lines import scroll_line_for_cursor
+
+                opts = {**(global_opts or {}), **getattr(window, "options", {})}
+                window.scroll_line = scroll_line_for_cursor(
+                    cursor_line=window.cursor.line,
+                    scroll_line=window.scroll_line,
+                    height=rect.height,
+                    scrolloff=int(opts.get("scrolloff", 0) or 0),
+                    spans=spans,
+                )
+            else:
+                window.scroll_to_cursor(
+                    text_width=self._text_width_for_window(window, rect.width, global_opts=global_opts)
+                )
+
+    def _virtual_line_spans(self, window: Any) -> list[tuple[int, int]]:
+        from peovim.ui.decorations import virtual_line_spans_for_document
+
+        return virtual_line_spans_for_document(self._host._editor_state, window.document)
 
     def snapshot_window_for_render(self, window: Any, *, global_opts: dict | None = None) -> WindowSnapshot:
         return window.snapshot(global_options=global_opts)

@@ -87,6 +87,7 @@ class TestSetup:
         assert "<leader>cs" in keys
         assert "<leader>m12" in keys
         assert "<leader>m21" in keys
+        assert "<leader>cr" in keys
 
     def test_registers_compare_commands(self):
         from peovim.plugins.compare import setup
@@ -114,6 +115,8 @@ class TestSetup:
         assert "DiffDebug" in commands
         assert "DiffMerge12" in commands
         assert "DiffMerge21" in commands
+        assert "CompareRefresh" in commands
+        assert "DiffRefresh" in commands
 
 
 class TestCompareController:
@@ -779,3 +782,188 @@ class TestCompareSessionUx:
         assert summary is not None
         assert summary["blocks"] == 0
         assert api._editor_state.message.startswith("Diff refreshed:")
+
+
+class TestCompareVirtualLineScroll:
+    """Regression: navigating a diff view could leave the cursor rendered off-screen
+    (reported as "cursor and text off by a row", gd jumping to the wrong line) because
+    Window.scroll_to_cursor() reasons in raw buffer-line space and has no idea virtual
+    lines (the blank alignment rows compare.py inserts) exist, so its scrolloff math
+    doesn't reserve enough rows whenever a virtual-line block falls between the
+    viewport top and the target line.
+    """
+
+    def test_move_window_to_line_keeps_cursor_visible_across_virtual_line_gaps(self, tmp_path):
+        from peovim.plugins import compare as compare_mod
+
+        left_lines = [f"left-{i}" for i in range(60)]
+        right_lines = left_lines[:20] + [f"inserted-{i}" for i in range(8)] + left_lines[20:]
+        left = tmp_path / "left.py"
+        right = tmp_path / "right.py"
+        left.write_text("\n".join(left_lines) + "\n", encoding="utf-8")
+        right.write_text("\n".join(right_lines) + "\n", encoding="utf-8")
+
+        api = _make_real_api(tmp_path, left)
+        api.options.set("scrolloff", 8)  # matches a common user config
+        compare_mod.setup(api)
+
+        assert compare_mod._controller is not None
+        compare_mod._controller.select_slot(1)
+        api.open_buffer(right)
+        compare_mod._controller.select_slot(2)
+        compare_mod._controller.compare_selected()
+
+        session = compare_mod._controller._session
+        assert session is not None
+        left_window, _right_window = compare_mod._controller._session_windows()
+        assert left_window is not None
+
+        # Targets before, inside the vicinity of, and well past the virtual-line gap
+        # (the insert block sits at buffer line 20, an 8-row virtual gap on the left pane).
+        for target in (5, 19, 25, 30, 45, 59):
+            left_window.set_scroll_line(0)
+            compare_mod._controller._move_window_to_line(left_window, session.blocks, "left", target)
+
+            visual_cursor = compare_mod._buffer_line_to_visual_row(left_window.cursor[0], session.blocks, "left")
+            visual_scroll = compare_mod._buffer_line_to_visual_row(
+                left_window.visible_range()[0], session.blocks, "left"
+            )
+            height = left_window.get_height()
+
+            assert 0 <= visual_cursor - visual_scroll < height, (
+                f"target={target}: cursor's visual row {visual_cursor} not within "
+                f"[{visual_scroll}, {visual_scroll + height}) — would render off-screen"
+            )
+
+
+class TestCompareLiveResync:
+    """Diff decorations must self-heal while the user edits a pane, not just on save/merge."""
+
+    def test_subscribes_to_buffer_changed(self):
+        from peovim.plugins.compare import setup
+
+        api = _make_api(Path("/workspace/src/a.py"))
+        setup(api)
+
+        events = [call.args[0] for call in api.events.on.call_args_list]
+        assert "buffer_changed" in events
+
+    def test_soft_resync_recomputes_blocks_without_moving_cursor(self, tmp_path):
+        from peovim.plugins import compare as compare_mod
+
+        left = tmp_path / "left.py"
+        right = tmp_path / "right.py"
+        left.write_text("same\nleft\nkeep\n", encoding="utf-8")
+        right.write_text("same\nright\nkeep\n", encoding="utf-8")
+
+        api = _make_real_api(tmp_path, left)
+        compare_mod.setup(api)
+
+        assert compare_mod._controller is not None
+        compare_mod._controller.select_slot(1)
+        api.open_buffer(right)
+        compare_mod._controller.select_slot(2)
+        compare_mod._controller.compare_selected()
+
+        windows_by_path = {window.document.path: window for window in api._workspace.active_tab.all_windows()}
+        right_window = windows_by_path[right.resolve()]
+        # Edit without saving or merging — this used to leave blocks/decorations stale.
+        right_window.document.replace(1, 0, 1, len(right_window.document.get_line(1)), "left")
+        compare_mod._controller._activate_window(right_window)
+        right_window.cursor.move_to(2, 0)
+
+        compare_mod._controller._soft_resync()
+
+        summary = compare_mod._controller.session_summary()
+        assert summary is not None
+        assert summary["blocks"] == 0
+        assert right_window.cursor.line == 2  # untouched by the soft resync
+
+    def test_on_buffer_changed_ignores_buffer_outside_the_session(self, tmp_path):
+        from peovim.plugins import compare as compare_mod
+
+        left = tmp_path / "left.py"
+        right = tmp_path / "right.py"
+        left.write_text("same\nleft\n", encoding="utf-8")
+        right.write_text("same\nright\n", encoding="utf-8")
+
+        api = _make_real_api(tmp_path, left)
+        compare_mod.setup(api)
+
+        assert compare_mod._controller is not None
+        compare_mod._controller.select_slot(1)
+        api.open_buffer(right)
+        compare_mod._controller.select_slot(2)
+        compare_mod._controller.compare_selected()
+
+        compare_mod._controller.on_buffer_changed(buf_id=-1)
+
+        assert compare_mod._controller._resync_timer is None
+
+    def test_refresh_session_without_active_diff_reports_status(self):
+        from peovim.plugins import compare as compare_mod
+
+        api = _make_api(Path("/workspace/src/a.py"))
+        compare_mod.setup(api)
+
+        assert compare_mod._controller is not None
+        compare_mod._controller.refresh_session()
+
+        assert api._editor_state.message == "No active diff"
+
+    def test_refresh_session_resyncs_immediately_and_reports_status(self, tmp_path):
+        from peovim.plugins import compare as compare_mod
+
+        left = tmp_path / "left.py"
+        right = tmp_path / "right.py"
+        left.write_text("same\nleft\n", encoding="utf-8")
+        right.write_text("same\nright\n", encoding="utf-8")
+
+        api = _make_real_api(tmp_path, left)
+        compare_mod.setup(api)
+
+        assert compare_mod._controller is not None
+        compare_mod._controller.select_slot(1)
+        api.open_buffer(right)
+        compare_mod._controller.select_slot(2)
+        compare_mod._controller.compare_selected()
+
+        windows_by_path = {window.document.path: window for window in api._workspace.active_tab.all_windows()}
+        right_window = windows_by_path[right.resolve()]
+        right_window.document.replace(1, 0, 1, len(right_window.document.get_line(1)), "left")
+
+        compare_mod._controller.refresh_session()
+
+        summary = compare_mod._controller.session_summary()
+        assert summary is not None
+        assert summary["blocks"] == 0
+        assert api._editor_state.message == "Diff refreshed"
+
+    def test_leader_dr_key_sequence_refreshes_session(self, tmp_path):
+        from peovim.plugins import compare as compare_mod
+
+        left = tmp_path / "left.py"
+        right = tmp_path / "right.py"
+        left.write_text("same\nleft\n", encoding="utf-8")
+        right.write_text("same\nright\n", encoding="utf-8")
+
+        api = _make_real_api(tmp_path, left)
+        api.options.set("leader", " ")
+        compare_mod.setup(api)
+
+        assert compare_mod._controller is not None
+        compare_mod._controller.select_slot(1)
+        api.open_buffer(right)
+        compare_mod._controller.select_slot(2)
+        compare_mod._controller.compare_selected()
+
+        windows_by_path = {window.document.path: window for window in api._workspace.active_tab.all_windows()}
+        right_window = windows_by_path[right.resolve()]
+        right_window.document.replace(1, 0, 1, len(right_window.document.get_line(1)), "left")
+
+        _feed_normal_keys(api, " cr")
+
+        summary = compare_mod._controller.session_summary()
+        assert summary is not None
+        assert summary["blocks"] == 0
+        assert api._editor_state.message == "Diff refreshed"

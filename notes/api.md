@@ -223,6 +223,15 @@ editor.record_jump() -> None
 editor.add_window_overlay(window: Window, namespace: str, decoration: Decoration) -> int
 editor.clear_window_namespace(window: Window, namespace: str) -> None
 editor.set_compare_status(status: dict | None) -> None
+# Registers the win_ids of an active diff/compare (or proposed-review) split, or None to
+# clear. open_buffer() consults this (via peovim.core.compare_jump), so every caller —
+# goto_location, explorer, pickers, fquick, local_history, alternate-file, panel "open
+# file" actions, etc. — opens a different file in a new split instead of replacing the
+# pane's buffer, which would desync the diff session's decorations. LspUiAdapter.goto_location
+# bypasses open_buffer() and carries its own copy of the same check. Plugins with a
+# split-pane diff view (compare.py, proposed_review.py) should call this whenever their
+# session's windows are (re)published, and clear it before opening their own panes.
+editor.set_compare_windows(window_ids: tuple[int, int] | None) -> None
 
 # Transient key interceptors — receive the next key(s) before the modal engine.
 # The interceptor exposes is_active (bool) and feed_key(key) -> bool. Pushed

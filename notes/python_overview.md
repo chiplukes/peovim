@@ -43,6 +43,8 @@ All modules here are headlessly testable. Nothing in `core/` imports from `ui/`.
 | `style.py` | `Color = tuple[int,int,int] | None` type alias + `Style` dataclass |
 | `shada.py` | Persistent state (global marks, registers, command history, jump list); read/write via `platformdirs` |
 | `diffing.py` | `parse_hunks(diff_text)` — unified diff parser for gutter sign placement; shared by gitsigns and svnsigns |
+| `compare_jump.py` | `should_split_for_compare_jump(...)` — shared guard so goto-style jumps (EditorAPI.goto_location and LspUiAdapter.goto_location) open a new split instead of clobbering an active diff/compare pane |
+| `virtual_lines.py` | Buffer-line ↔ visual-row conversion for `VirtualLine` decorations; used by `sync_window_render_state` so scroll-to-cursor accounts for virtual-line padding (compare.py's diff-alignment rows) |
 | `persistence.py` | Shared atomic file write helpers used by document/session/store saves |
 | `persistence_policy.py` | Shared inventory of persistence surfaces and multi-instance policy classifications |
 | `persistence_undo.py` | Per-file persistent undo storage (msgpack); survives buffer close and editor restart |
@@ -161,7 +163,7 @@ Nothing outside `ui/` imports from here directly (plugins use `api.ui`).
 | `layout.py` | `compute_layout(split_tree, rect) -> dict[WindowLeaf, Rect]` — pure function |
 | `cell_grid.py` | `CellGrid` — 2D array of `(char, fg, bg, attrs)`; per-cell dirty tracking; `flush() -> list[RenderOp]` |
 | `window_renderer.py` | `render_window(snapshot, rect, ...) -> CellGrid` — pure; handles gutter, syntax, HighlightRegion, OverlayChar, VirtualText, VirtualLine, GhostText, Sign, folds, indent guides, colorcolumn |
-| `decorations.py` | Decoration types: `HighlightRegion`, `VirtualText`, `VirtualLine`, `Sign`, `InlayHint`, `GhostText`, `OverlayChar`, `CodeLens`, `Conceal` |
+| `decorations.py` | Decoration types: `HighlightRegion`, `VirtualText`, `VirtualLine`, `Sign`, `InlayHint`, `GhostText`, `OverlayChar`, `CodeLens`, `Conceal`; `virtual_line_spans_for_document(...)` — shared VirtualLine lookup for scroll/cursor-row math |
 | `markdown.py` | `render_markdown(text) -> list[str]` — strips markdown for hover float display |
 | `float_manager.py` | `FloatManager` — positioned floats; z-ordering; focused float keyboard routing; `CursorRelative`/`Centered`/`Absolute` anchors |
 | `target_chooser.py` | `TargetChooser` + `ChooserTarget` — lettered-badge chooser (A/B/C) over arbitrary targets; pushed as a transient key interceptor; used by the explorer file-open chooser and `<leader>wg` goto |

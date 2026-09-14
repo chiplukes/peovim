@@ -851,6 +851,37 @@ Each Window maintains its own `DecorationSet`. Plugins add decorations via
 `api.window.add_decoration(...)`. They're cleared and rebuilt on each render
 frame (cheap — it's just a list rebuild from fast sources like LSP state).
 
+**`VirtualLine` and scroll positioning.** `Window.scroll_line`/`cursor.line` are
+plain buffer-line indices — `VirtualLine` rows don't exist in the buffer, so they
+don't shift them. But `Window.scroll_to_cursor()` (core, buffer-line-only math) has
+no idea virtual lines exist, and `WindowRenderController.sync_window_render_state`
+calls it unconditionally, every render frame, whenever `window.follow_cursor` is
+true (the default — set on essentially every cursor move). Left alone, this
+silently drifts the visible cursor line away from `cursor.line` by however many
+virtual rows fall between the viewport top and the cursor, once enough of them
+are in play (compare.py's diff-alignment padding is the current source). Fixed by
+having `sync_window_render_state` check for `VirtualLine` decorations on the
+window's document (`peovim.core.virtual_lines`, any namespace) and, if present,
+compute scroll_line with a visual-row-aware equivalent of the same algorithm
+instead of calling `scroll_to_cursor()` directly. `peovim.plugins.compare` also
+uses `virtual_lines` functions directly (`_visual_scroll_line`) when positioning
+diff panes — mostly redundant with the render-controller fix but keeps
+`window.visible_range()` correct for code that reads it before the next render
+frame (e.g. `on_cursor_moved`'s cross-pane scroll sync).
+
+There's a second, independent place the identical bug lived:
+`TerminalCursorController.resolve_terminal_cursor_state()`
+(`peovim/ui/cursor_controller.py`) positions the *real terminal cursor* — used
+instead of the painted cursor cell whenever `cursorblink` is on or a bar-shaped
+`insertcursor` is active in insert mode (`should_use_terminal_cursor()`) — and had
+its own, separately-written `cursor.line - scroll_line` row computation, equally
+blind to virtual lines. This is the one a user actually *sees* when either option
+is set (a common config), so fixing only `sync_window_render_state` wasn't enough:
+the painted-cursor cell it governs is suppressed (`_paint_cursor: False`) whenever
+the terminal cursor takes over. Both call sites now share
+`peovim.ui.decorations.virtual_line_spans_for_document()` to gather the
+`(after_line, count)` spans before converting through `peovim.core.virtual_lines`.
+
 ### `peovim/ui/float_manager.py` — Floating windows
 
 Floats render on top of the cell grid after the main layout pass.

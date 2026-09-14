@@ -360,6 +360,9 @@ class PlayMacro(Action):
 class SplitWindow(Action):
     direction: Literal["h", "v"]
     buffer_path: str | None = None
+    # True: add the new window at the far edge of the whole tab (see
+    # Tab.split_vertical_at_edge) instead of splitting the active window in place.
+    at_edge: bool = False
 
 
 @dataclass(frozen=True)
