@@ -371,6 +371,19 @@ with buffer.begin_stream(line: int, col: int):
     buffer.stream_append(text: str) -> None   # called repeatedly as tokens arrive
 ```
 
+Write operations always target the specific buffer they were called on, even
+if that buffer isn't the currently-active window. This matters for plugins
+that hold a `BufferAPI` for a buffer that may not be active by the time they
+mutate it — most commonly a `buffer_opened` handler that defers its actual
+edit via `api.defer()`, which can run after the active window has changed
+(e.g. a diff-compare view opening two buffers in quick succession, each
+scheduling a deferred normalize, while the active window keeps moving).
+`BufferAPI` finds a window showing the target buffer (in any tab) and routes
+the edit through it regardless of what's active; if the buffer isn't shown
+anywhere, the edit still applies directly to the buffer (skipping
+undo-grouping/dot-repeat tracking, since there's no window/cursor context to
+attach it to).
+
 #### Lifecycle
 ```python
 buffer.save() -> None                        # raises ValueError if no path set

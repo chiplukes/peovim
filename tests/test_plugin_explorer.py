@@ -624,6 +624,80 @@ class TestExplorerCommands:
         assert (tmp_path / "renamed.txt").read_text(encoding="utf-8") == "copy"
 
 
+class TestExplorerDiffIntegration:
+    """Mark-slot-1/2 and launch-diff, driven from an explorer selection."""
+
+    def test_diff_mark_emits_event_for_selected_file(self, tmp_path):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        target = tmp_path / "left.py"
+        target.write_text("hello\n", encoding="utf-8")
+        # A handler must exist for diff_mark to proceed (mirrors compare.py being loaded).
+        api.events.on("compare_select_slot_path", lambda **_kw: None)
+        node = TreeNode(label="left.py", value=str(target), children_fn=None)
+        controller = _controller_with_selection(api, node)
+
+        controller.diff_mark(1)
+
+        assert api.events.handler_count("compare_select_slot_path") == 1
+
+    def test_diff_mark_refuses_a_directory(self, tmp_path):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        received: list[dict] = []
+        api.events.on("compare_select_slot_path", lambda **kw: received.append(kw))
+        node = TreeNode(label="subdir", value=str(tmp_path), children_fn=lambda: [])
+        controller = _controller_with_selection(api, node)
+
+        controller.diff_mark(1)
+
+        assert received == []
+
+    def test_diff_mark_notifies_when_compare_plugin_not_loaded(self, tmp_path, monkeypatch):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        notifications = []
+        monkeypatch.setattr(api.ui, "notify", lambda message, **kw: notifications.append(message))
+        target = tmp_path / "left.py"
+        target.write_text("hello\n", encoding="utf-8")
+        node = TreeNode(label="left.py", value=str(target), children_fn=None)
+        controller = _controller_with_selection(api, node)
+
+        controller.diff_mark(1)  # no compare_select_slot_path handler registered
+
+        assert len(notifications) == 1
+        assert "not available" in notifications[0]
+
+    def test_diff_launch_selected_notifies_when_compare_plugin_not_loaded(self, tmp_path, monkeypatch):
+        api = _make_api()
+        notifications = []
+        monkeypatch.setattr(api.ui, "notify", lambda message, **kw: notifications.append(message))
+        controller = _ExplorerController(api)
+
+        controller.diff_launch_selected()  # no <Plug>DiffSelected registered
+
+        assert len(notifications) == 1
+        assert "not available" in notifications[0]
+
+    def test_explorer_and_compare_scoped_keys_coexist_when_registered_scope_first(self, tmp_path):
+        # Regression: registering a scoped binding for a key that already has a
+        # global default for that key silently deletes the global one — the safe
+        # order is scoped-then-global (see notes/keys.md). Loading explorer before
+        # compare (as documented) produces exactly that order for <leader>c1/c2/cc.
+        from peovim.plugins import compare as compare_mod
+        from peovim.plugins import explorer as explorer_mod
+
+        api = _make_api()
+        explorer_mod.setup(api)
+        compare_mod.setup(api)
+
+        variants = api._binding_registry._registered[("normal", "<leader>c1")]
+        assert {v.scope for v in variants} == {"explorer", ""}
+
+
 class TestExplorerGitStatus:
     def test_status_marker_maps_untracked_new_and_modified(self):
         assert _status_marker("??") == "!"

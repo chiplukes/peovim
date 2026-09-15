@@ -320,28 +320,95 @@ class BufferAPI:  # cm:d8c7a3
                 self._dispatcher.ensure_public_mutation_allowed("CompoundAction")
                 saved = self._dispatcher._dot_repeat
                 compound = CompoundAction(tuple(collected))
-                if getattr(self._dispatcher, "_in_dispatch", False):
-                    self._dispatcher._apply(compound)
-                else:
-                    self._dispatcher.dispatch([compound])
+
+                def _run() -> None:
+                    if getattr(self._dispatcher, "_in_dispatch", False):
+                        self._dispatcher._apply(compound)
+                    else:
+                        self._dispatcher.dispatch([compound])
+
+                if not self._with_target_window(_run):
+                    self._apply_actions_directly(collected)
                 self._dispatcher._dot_repeat = saved
+            elif collected and self._dispatcher is None:
+                self._apply_actions_directly(collected)
+
+    def _find_window_for_doc(self) -> Any | None:
+        """Find a window (in any tab) currently displaying self._doc, or None."""
+        workspace = getattr(self._dispatcher, "_workspace", None)
+        if workspace is None:
+            return None
+        for tab in workspace.tabs:
+            for window in tab.all_windows():
+                if window.document is self._doc:
+                    return window
+        return None
+
+    def _with_target_window(self, fn: Any) -> bool:
+        """Run `fn()` with the dispatcher pointed at a window showing self._doc.
+
+        Dispatcher action handlers resolve their target document as
+        `self.window.document` — whatever window is currently *active* —
+        not from any buffer reference the caller holds. Without this, calling
+        insert/delete/replace on a BufferAPI for a non-active buffer (e.g.
+        from a deferred `api.defer()` callback that fires after the active
+        window changed) silently mutates whatever buffer happens to be
+        active instead of the one the caller intended. See
+        notes/architecture.md's BufferAPI section for the incident this fixed.
+
+        Returns True if a window showing this document was found (and `fn`
+        ran through it); False if this document isn't displayed anywhere,
+        so the caller should fall back to mutating it directly.
+        """
+        dispatcher = self._dispatcher
+        if dispatcher.window.document is self._doc:
+            fn()
+            return True
+        target_window = self._find_window_for_doc()
+        if target_window is None:
+            return False
+        prev_window = dispatcher.window
+        dispatcher.window = target_window
+        try:
+            fn()
+        finally:
+            # dispatch()'s own _sync_post_dispatch_state() already resets
+            # self.window = workspace.active_window on the normal path; this
+            # restore only matters if fn() raised before that ran.
+            dispatcher.window = prev_window
+        return True
+
+    def _apply_actions_directly(self, actions: list) -> None:
+        """Mutate self._doc directly, bypassing the dispatcher entirely.
+
+        Used when there's no dispatcher (bare test construction) or when
+        self._doc isn't shown in any window — there's no cursor/undo-session
+        context to route through, so this skips dot-repeat/undo-grouping
+        tracking rather than risk mutating the wrong buffer.
+        """
+        from peovim.modal.actions import DeleteRange, InsertText, ReplaceRange
+
+        for a in actions:
+            if isinstance(a, InsertText):
+                self._doc.insert(a.line, a.col, a.text)
+            elif isinstance(a, DeleteRange):
+                self._doc.delete(a.start_line, a.start_col, a.end_line, a.end_col)
+            elif isinstance(a, ReplaceRange):
+                self._doc.replace(a.start_line, a.start_col, a.end_line, a.end_col, a.new_text)
 
     def _dispatch_mutation(self, actions: list) -> None:
-        """Route mutations through batch accumulator or dispatcher."""
+        """Route mutations through batch accumulator or dispatcher.
+
+        Always targets self._doc regardless of which buffer is currently
+        active in the dispatcher — see _with_target_window()'s docstring.
+        """
         if self._batch_actions is not None:
             self._batch_actions.extend(actions)
         elif self._dispatcher is not None:
             operation = type(actions[0]).__name__ if actions else "mutation"
             self._dispatcher.ensure_public_mutation_allowed(operation)
-            self._dispatcher.dispatch(actions)
+            if not self._with_target_window(lambda: self._dispatcher.dispatch(actions)):
+                self._apply_actions_directly(actions)
         else:
             # No dispatcher available (e.g. tests that construct BufferAPI directly)
-            from peovim.modal.actions import DeleteRange, InsertText, ReplaceRange
-
-            for a in actions:
-                if isinstance(a, InsertText):
-                    self._doc.insert(a.line, a.col, a.text)
-                elif isinstance(a, DeleteRange):
-                    self._doc.delete(a.start_line, a.start_col, a.end_line, a.end_col)
-                elif isinstance(a, ReplaceRange):
-                    self._doc.replace(a.start_line, a.start_col, a.end_line, a.end_col, a.new_text)
+            self._apply_actions_directly(actions)

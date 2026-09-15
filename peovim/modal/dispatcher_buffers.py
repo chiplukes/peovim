@@ -67,6 +67,14 @@ def open_path_in_window(
             f"Mixed line endings detected: {display_path} (saving will normalize to {target_doc.fileformat})"
         )
 
+    pending = target_doc.has_pending_undo_restore()
+    if dispatcher._editor_state is not None and pending > 0:
+        group_word = "change" if pending == 1 else "changes"
+        dispatcher._editor_state.message = (
+            f"{pending} unsaved {group_word} from a previous session available for {resolved} "
+            "(:UndoRestore to apply, :UndoDiscard to clear permanently)"
+        )
+
     from peovim.core.filetype import detect_filetype
 
     filetype = detect_filetype(str(resolved))

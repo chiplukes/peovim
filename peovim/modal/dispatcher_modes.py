@@ -167,8 +167,66 @@ def handle_scroll_view(d: ActionDispatcher, action: ScrollView, doc: Document, c
     d.window.follow_cursor = True
     d.window.scroll_line = max(0, min(d.window.scroll_line + action.lines, lc - 1))
     vis_start = d.window.scroll_line
-    vis_end = vis_start + d.window.height - 1
-    cur.move_to(max(vis_start, min(cur.line, vis_end)), cur.col)
+    height = d.window.height
+    # Clamp into the scrolloff-respecting sub-range, not the raw viewport — otherwise
+    # the cursor can end up right at an edge, and the next render's follow-cursor pass
+    # (which DOES enforce scrolloff — see sync_window_render_state/scroll_to_cursor)
+    # decides the margin is violated and pulls the viewport straight back, undoing
+    # this scroll. Real vim <C-e>/mouse-wheel semantics: scrolling moves the view; if
+    # that would violate scrolloff, the CURSOR moves to hold the margin, not the view.
+    so = int(d._editor_state.options.get("scrolloff") or 0) if d._editor_state is not None else 0
+    so = min(max(0, so), max(0, height - 1) // 2)
+
+    spans: list[tuple[int, int]] = []
+    if d._editor_state is not None:
+        from peovim.ui.decorations import virtual_line_spans_for_document
+
+        spans = virtual_line_spans_for_document(d._editor_state, doc)
+
+    if spans:
+        # A raw buffer-line clamp is blind to virtual-line padding (diff-view
+        # alignment spacers). Computing an *independent* inverse clamp here
+        # (buffer_line_to_visual_row → adjust → visual_row_to_buffer_line) can
+        # disagree with what sync_window_render_state's follow-cursor pass
+        # decides right after — visual_row_to_buffer_line intentionally
+        # collapses every visual row inside a span to one buffer line (so
+        # scrolling *toward* a span actually reaches it), which makes that
+        # inverse non-invertible near a span and can produce a cursor position
+        # the forward check rejects, permanently freezing the viewport a few
+        # lines from the span. Use scroll_line_for_cursor itself as the oracle
+        # instead: if the cursor is already stable, leave it (matches
+        # <C-e>/<C-y> semantics — the view moves, the cursor doesn't, until it
+        # would go off-screen); otherwise walk it toward the scroll direction
+        # until the same function the render will call agrees this scroll
+        # position is stable, guaranteeing they can't disagree next frame.
+        from peovim.core.virtual_lines import scroll_line_for_cursor
+
+        new_cur_line = cur.line
+        direction = 1 if action.lines > 0 else (-1 if action.lines < 0 else 0)
+        if (
+            direction != 0
+            and scroll_line_for_cursor(
+                cursor_line=new_cur_line, scroll_line=vis_start, height=height, scrolloff=so, spans=spans
+            )
+            != vis_start
+        ):
+            for _ in range(max(64, height * 2)):
+                new_cur_line += direction
+                if new_cur_line <= 0 or new_cur_line >= lc - 1:
+                    new_cur_line = max(0, min(new_cur_line, lc - 1))
+                    break
+                if (
+                    scroll_line_for_cursor(
+                        cursor_line=new_cur_line, scroll_line=vis_start, height=height, scrolloff=so, spans=spans
+                    )
+                    == vis_start
+                ):
+                    break
+    else:
+        vis_end = vis_start + height - 1
+        new_cur_line = max(vis_start + so, min(cur.line, vis_end - so))
+
+    cur.move_to(max(0, min(new_cur_line, lc - 1)), cur.col)
     d._clamp_cursor_for_mode(doc)
     d._emit_later("cursor_moved", buf_id=d._buf_id, line=cur.line, col=cur.col)
 

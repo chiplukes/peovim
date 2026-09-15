@@ -20,7 +20,7 @@ from charset_normalizer import from_bytes
 from peovim.core.buffer import PieceTable
 from peovim.core.history import UndoStack
 from peovim.core.persistence import atomic_write_bytes
-from peovim.core.persistence_undo import read_undo_file, write_undo_file
+from peovim.core.persistence_undo import delete_undo_file, read_undo_file, write_undo_file
 from peovim.core.snapshot import BufferSnapshot
 
 _log = logging.getLogger(__name__)
@@ -102,6 +102,9 @@ class Document:  # cm:d5f3b8
         self._change_counter: int = 0  # +1 on edit, -1 on undo, +1 on redo
         self._clean_counter: int = 0  # _change_counter value at last save/load
         self._undo_flush_needed: bool = False
+        # Unsaved edits from a previous session, discovered on load but not yet
+        # applied — see _check_pending_undo_restore()/restore_pending_undo().
+        self._pending_undo_restore: tuple[list[list], list[list], int] | None = None
 
     @property
     def dirty(self) -> bool:
@@ -123,7 +126,7 @@ class Document:  # cm:d5f3b8
             self.filetype = detect_filetype(str(path))
         self._loaded_file_state = _stat_fingerprint(path)
         self._undo_flush_needed = False
-        self._restore_undo()
+        self._check_pending_undo_restore()
 
     def load_bytes(self, raw: bytes) -> None:
         """Load from raw bytes. Detects encoding and CRLF."""
@@ -405,12 +408,19 @@ class Document:  # cm:d5f3b8
         except Exception:
             _log.exception("undo flush failed for %s", self.path)
 
-    def _restore_undo(self) -> None:
-        """Restore undo history from disk after loading a file.
+    def _check_pending_undo_restore(self) -> None:
+        """Called after loading a file to see what its undo file has to offer.
 
-        Replays unsaved (dirty) edits forward to reconstruct the document state,
-        then loads all entries into the undo stack.
+        If there are no unsaved (dirty) entries from a previous session, this is
+        just ordinary undo/redo history — load it immediately so `u`/`<C-r>` work.
+        If there ARE unsaved entries, don't touch the buffer: stash them on
+        `_pending_undo_restore` for the caller to explicitly accept
+        (`restore_pending_undo()`) or reject (`discard_pending_undo()`). Loading a
+        file must never silently mutate its content or mark it dirty out from
+        under the user — see restore_pending_undo()'s docstring for why this
+        used to work differently.
         """
+        self._pending_undo_restore = None
         if self.path is None:
             return
         result = read_undo_file(self.path)
@@ -419,24 +429,67 @@ class Document:  # cm:d5f3b8
             return
         stack_entries, redo_entries, dirty_count = result
         if dirty_count > 0 and dirty_count <= len(stack_entries):
-            entries_to_replay = stack_entries[-dirty_count:]
-            for group in entries_to_replay:
-                for edit in group:
-                    if edit.kind == "insert":
-                        self._table.insert(edit.pos, edit.text)
-                    else:
-                        self._table.delete(edit.pos, len(edit.text))
+            self._pending_undo_restore = (stack_entries, redo_entries, dirty_count)
+            _log.debug(
+                "undo restore pending for %s: stack=%d redo=%d dirty=%d",
+                self.path,
+                len(stack_entries),
+                len(redo_entries),
+                dirty_count,
+            )
+            return
+        self._undo.restore_from_entries(stack_entries, redo_entries)
+        _log.debug(
+            "undo history loaded for %s: stack=%d redo=%d (nothing unsaved pending)",
+            self.path,
+            len(stack_entries),
+            len(redo_entries),
+        )
+
+    def has_pending_undo_restore(self) -> int:
+        """Number of unsaved edit groups from a previous session waiting to be
+        restored or discarded, or 0 if none. See restore_pending_undo()."""
+        return self._pending_undo_restore[2] if self._pending_undo_restore is not None else 0
+
+    def restore_pending_undo(self) -> int:
+        """Apply unsaved edits from a previous session (see has_pending_undo_restore()).
+
+        Previously this happened unconditionally and silently on every load() —
+        confusing, since a file could open already dirty with no indication why.
+        Now it's an explicit opt-in (:UndoRestore) so restoring forgotten,
+        possibly-unwanted edits is a choice, not a surprise.
+
+        Returns the number of edit groups replayed (0 if none were pending).
+        """
+        if self._pending_undo_restore is None:
+            return 0
+        stack_entries, redo_entries, dirty_count = self._pending_undo_restore
+        entries_to_replay = stack_entries[-dirty_count:]
+        for group in entries_to_replay:
+            for edit in group:
+                if edit.kind == "insert":
+                    self._table.insert(edit.pos, edit.text)
+                else:
+                    self._table.delete(edit.pos, len(edit.text))
         self._undo.restore_from_entries(stack_entries, redo_entries)
         self._change_counter = dirty_count
         self._clean_counter = 0
         self._undo_flush_needed = False
-        _log.debug(
-            "undo restored for %s: stack=%d redo=%d dirty=%d",
-            self.path,
-            len(stack_entries),
-            len(redo_entries),
-            dirty_count,
-        )
+        self._pending_undo_restore = None
+        _log.debug("undo restored for %s: dirty=%d", self.path, dirty_count)
+        return dirty_count
+
+    def discard_pending_undo(self) -> bool:
+        """Permanently discard unsaved edits from a previous session (:UndoDiscard)
+        without applying them — deletes the on-disk undo file entirely, including
+        its ordinary (non-dirty) undo/redo history. Returns True if there was
+        anything pending to discard.
+        """
+        had_pending = self._pending_undo_restore is not None
+        self._pending_undo_restore = None
+        if self.path is not None:
+            delete_undo_file(self.path)
+        return had_pending
 
     # ------------------------------------------------------------------
     # Events

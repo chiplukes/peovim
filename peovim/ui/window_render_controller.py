@@ -113,10 +113,22 @@ class WindowRenderController:  # cm:9d6c3f
     def sync_window_render_state(self, window: Any, rect: Rect, *, global_opts: dict | None = None) -> None:
         window.width = rect.width
         window.height = rect.height
-        max_scroll = max(0, window.document.line_count() - rect.height)
+        spans = self._virtual_line_spans(window)
+        line_count = window.document.line_count()
+        if spans:
+            # A raw buffer-line max_scroll (line_count - height) undercounts how far
+            # the viewport can scroll whenever virtual rows fall in the remaining
+            # unscrolled tail of the document — those rows consume vertical space too,
+            # so more buffer-line scroll is needed to actually reach the end than the
+            # line count alone suggests. Compute the limit in visual-row space instead.
+            from peovim.core.virtual_lines import buffer_line_to_visual_row, visual_row_to_buffer_line
+
+            total_visual = buffer_line_to_visual_row(line_count, spans)
+            max_scroll = visual_row_to_buffer_line(max(0, total_visual - rect.height), spans)
+        else:
+            max_scroll = max(0, line_count - rect.height)
         window.scroll_line = max(0, min(window.scroll_line, max_scroll))
         if getattr(window, "follow_cursor", True):
-            spans = self._virtual_line_spans(window)
             if spans:
                 # scroll_to_cursor() reasons in raw buffer-line space and has no notion
                 # of virtual lines, so its scrolloff math reserves the wrong number of

@@ -98,6 +98,20 @@ class _CompareController:
         if path is None:
             _set_status(self._api, f"Diff {slot} requires a file-backed buffer")
             return
+        self._set_slot(slot, path)
+
+    def select_slot_path(self, slot: int, path: str | Path) -> None:
+        """Mark an explicit path as diff slot 1/2 — e.g. from the explorer sidebar,
+        where the "current file" is whatever's highlighted in the tree, not the
+        active editor buffer. See the `compare_select_slot_path` event in setup().
+        """
+        resolved = Path(path).resolve()
+        if not resolved.is_file():
+            _set_status(self._api, f"Diff {slot} requires a file, not a directory")
+            return
+        self._set_slot(slot, resolved)
+
+    def _set_slot(self, slot: int, path: Path) -> None:
         if slot == 1:
             self._slot1 = path
         else:
@@ -236,17 +250,52 @@ class _CompareController:
             return
         if active_win is None or other_win is None:
             return
-        scroll = active_win.visible_range()[0]
+        to_side = "right" if from_side == "left" else "left"
         height = active_win.get_height()
+        so = int(self._api.options.get("scrolloff") or 0)
+        margin = min(max(0, so), max(0, height - 1) // 2)
+        # active_win's own scroll_line hasn't been resynced for this frame yet —
+        # cursor_moved fires synchronously inside dispatch(), *before* the next
+        # render's sync_window_render_state runs the same follow-cursor logic
+        # against the now-current cursor position. Using visible_range() here
+        # would read last frame's (stale) scroll, so mapping from it always lags
+        # one frame behind the active pane during continuous movement — the
+        # other pane keeps chasing where the active pane *was*, not where it's
+        # about to be, which reads as persistent drift. Predict the fresh value
+        # instead, mirroring scroll_line_for_cursor's own stability condition in
+        # this side's visual-row space (blocks already carries the virtual-line
+        # accounting compare.py needs — see _buffer_line_to_visual_row).
+        active_scroll = active_win.visible_range()[0]
+        active_visual_scroll = _buffer_line_to_visual_row(active_scroll, session.blocks, from_side)
+        active_visual_cursor = _buffer_line_to_visual_row(active_win.cursor[0], session.blocks, from_side)
+        if active_visual_cursor - margin < active_visual_scroll:
+            predicted_visual = active_visual_cursor - margin
+        elif active_visual_cursor + margin >= active_visual_scroll + height:
+            predicted_visual = active_visual_cursor + margin - height + 1
+        else:
+            predicted_visual = active_visual_scroll
+        scroll = _visual_row_to_buffer_line(max(0, predicted_visual), session.blocks, from_side)
         other_scroll = _map_scroll_line(scroll, session.blocks, from_side=from_side)
         other_win.set_scroll_line(other_scroll)
-        # Clamp the other pane's cursor into the new visible range.
-        # sync_window_render_state calls scroll_to_cursor() before each render;
-        # if the cursor is outside the synced viewport it would fight us and reset
-        # the scroll back on the very next frame.
+        # Clamp the other pane's cursor into the new visible range, respecting
+        # scrolloff — sync_window_render_state's own follow-cursor logic (which
+        # DOES respect scrolloff — see scroll_line_for_cursor) runs on the very
+        # next render frame. If the cursor sits within `scrolloff` rows of an
+        # edge here, that logic decides the viewport needs to move to restore
+        # the margin and overrides the alignment we just computed — fighting us
+        # and drifting the two panes apart over successive moves (worst during
+        # continuous scrolling in one direction, since the cursor is naturally
+        # inside the margin on nearly every step). Mirror scroll_line_for_cursor's
+        # exact stability condition in visual-row space (accounting for virtual
+        # line spans on `other_win`'s own side) so nothing fights us next frame.
         other_cur = other_win.cursor[0]
         other_max = max(0, other_win.buffer().line_count() - 1)
-        clamped = max(other_scroll, min(other_cur, other_scroll + height - 1, other_max))
+        scroll_visual = _buffer_line_to_visual_row(other_scroll, session.blocks, to_side)
+        lo_visual = scroll_visual + margin
+        hi_visual = scroll_visual + height - 1 - margin
+        cur_visual = _buffer_line_to_visual_row(other_cur, session.blocks, to_side)
+        clamped_visual = max(lo_visual, min(cur_visual, hi_visual))
+        clamped = max(0, min(_visual_row_to_buffer_line(clamped_visual, session.blocks, to_side), other_max))
         if clamped != other_cur:
             other_win.set_cursor(clamped, other_win.cursor[1])
 
@@ -925,6 +974,7 @@ def setup(api: EditorAPI) -> None:
     api.commands.register("DiffRefresh", lambda cmd, ctx: _controller.refresh_session(), min_abbrev=11)
     api.events.on("compare_selection_ready", lambda **kwargs: _controller.open_selected_compare(**kwargs))
     api.events.on("diff_selection_ready", lambda **kwargs: _controller.open_selected_compare(**kwargs))
+    api.events.on("compare_select_slot_path", lambda **kwargs: _controller.select_slot_path(**kwargs))
     api.events.on("buffer_saved", lambda **kwargs: _controller.on_buffer_saved(**kwargs))
     api.events.on("buffer_changed", lambda **kwargs: _controller.on_buffer_changed(**kwargs))
     api.events.on("cursor_moved", lambda **kwargs: _controller.on_cursor_moved(**kwargs))
@@ -962,8 +1012,20 @@ def _buffer_line_to_visual_row(line: int, blocks: tuple[CompareBlock, ...], side
 def _visual_row_to_buffer_line(visual_row: int, blocks: tuple[CompareBlock, ...], side: str) -> int:
     """Convert a visual row index to the buffer line that should be at the top of the viewport.
 
-    For visual rows occupied by virtual lines (no buffer content on `side`), returns the
-    anchor buffer line so the viewport scroll makes those virtual rows visible.
+    For visual rows occupied by virtual lines (no buffer content on `side` — a pure
+    insert/delete block, all padding), there's no real line *at* that exact visual
+    row to point to, so this snaps to whichever edge of the gap the target is closer
+    to: before it (`buf_start - 1`, so the whole gap renders from its top — right for
+    a target near the gap's start) or after it (`buf_end`, skipping straight to the
+    next real content — right once the target is more than halfway through the gap).
+    Always anchoring "before" regardless of depth (the previous behavior) made the
+    far side always render the *entire* virtual gap from its start even when the
+    near side had already scrolled deep into or past it — e.g. mapping a viewport
+    near the *end* of a 50-line delete block still pointed the other side at the
+    very top of that block's virtual padding, filling most of its screen with an
+    off-by-tens-of-rows block of padding instead of the real content that should
+    have been in view. See `_map_scroll_line`, the only caller that hits this path
+    for anything other than an exact block boundary.
     """
     vis_pos = 0
     buf_pos = 0
@@ -981,8 +1043,10 @@ def _visual_row_to_buffer_line(visual_row: int, blocks: tuple[CompareBlock, ...]
             block_buf_count = buf_end - buf_start
             if block_buf_count > 0:
                 return buf_start + min(visual_row - vis_pos, block_buf_count - 1)
-            # Virtual lines on this side — scroll to anchor so they are visible.
-            return max(0, buf_start - 1)
+            offset_into_span = visual_row - vis_pos
+            if offset_into_span < block_vis // 2:
+                return max(0, buf_start - 1)
+            return buf_end
 
         vis_pos += block_vis
         buf_pos = buf_end

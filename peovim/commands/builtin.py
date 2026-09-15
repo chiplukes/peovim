@@ -1318,6 +1318,68 @@ def _cmd_recoverfile(cmd: ParsedCommand, ctx: Any) -> None:
         es.message = f"Recovered {target.name} — {len(text.splitlines())} lines restored (use :w to save)"
 
 
+def _resolve_undo_target(cmd: ParsedCommand, ctx: Any) -> tuple[Any, Any]:
+    """Resolve the target Document for :UndoRestore/:UndoDiscard.
+
+    Same lookup order as :RecoverFile: an explicit [path] arg is matched
+    against open workspace documents (falling back to the current buffer if
+    it happens to be that path); with no arg, just the current buffer. Both
+    commands mutate/discard in-memory undo state, so — like :RecoverFile —
+    the target must already be open.
+    """
+    import pathlib
+
+    path_arg = cmd.args.strip()
+    if not path_arg:
+        doc = _get_doc(ctx)
+        return doc, (doc.path if doc is not None else None)
+
+    target = pathlib.Path(path_arg).resolve()
+    workspace = getattr(ctx, "workspace", None)
+    doc = workspace.find_document_by_path(target) if workspace is not None else None
+    if doc is None:
+        current = _get_doc(ctx)
+        doc = current if current is not None and current.path == target else None
+    return doc, target
+
+
+def _cmd_undo_restore(cmd: ParsedCommand, ctx: Any) -> None:
+    """:UndoRestore [path] — apply unsaved edits from a previous session that
+    persistent undo (undofile) found but did not auto-apply when the file
+    was opened. See Document.restore_pending_undo()."""
+    es = getattr(ctx, "editor_state", None)
+    doc, target = _resolve_undo_target(cmd, ctx)
+    if doc is None:
+        if es is not None:
+            name = target.name if target is not None else cmd.args.strip()
+            es.message = f"UndoRestore: {name} is not open — open it first"
+        return
+    count = doc.restore_pending_undo()
+    if es is None:
+        return
+    if count == 0:
+        es.message = "UndoRestore: no pending unsaved changes for this file"
+    else:
+        group_word = "change" if count == 1 else "changes"
+        es.message = f"Restored {count} unsaved {group_word} (use :w to save, u to undo)"
+
+
+def _cmd_undo_discard(cmd: ParsedCommand, ctx: Any) -> None:
+    """:UndoDiscard [path] — permanently discard unsaved edits from a previous
+    session without applying them (deletes the on-disk undo file). See
+    Document.discard_pending_undo()."""
+    es = getattr(ctx, "editor_state", None)
+    doc, target = _resolve_undo_target(cmd, ctx)
+    if doc is None:
+        if es is not None:
+            name = target.name if target is not None else cmd.args.strip()
+            es.message = f"UndoDiscard: {name} is not open — open it first"
+        return
+    had_pending = doc.discard_pending_undo()
+    if es is not None:
+        es.message = "UndoDiscard: cleared pending unsaved changes" if had_pending else "UndoDiscard: nothing pending"
+
+
 # ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
@@ -1373,3 +1435,5 @@ def register_builtins(registry: CommandRegistry) -> None:  # cm:2e7d3b
     registry.register("LogView", _cmd_logview, min_abbrev=4)
     registry.register("LogClear", _cmd_logclear, min_abbrev=4)
     registry.register("RecoverFile", _cmd_recoverfile, min_abbrev=7)
+    registry.register("UndoRestore", _cmd_undo_restore, min_abbrev=5)
+    registry.register("UndoDiscard", _cmd_undo_discard, min_abbrev=5)

@@ -178,6 +178,18 @@ supersedes any unscoped (global) default for the key, so a user
 `nmap(..., scope="editor")` replaces a plugin's default binding; which-key
 shows a single named key, never an unnamed group.
 
+**Coexistence order matters.** "Supersedes" above means *deletes*, not
+*shadows*: registering a scoped variant for a key that already has a global
+(`scope=""`) default for that key removes the global one outright — order is
+everything. Registering the scoped variant **first**, then the global one,
+lets both coexist (the global registration only replaces prior global
+entries for that key, leaving the scoped one alone); registering global
+first and scoped second wipes the global one. `nunmap(key)` always clears
+every scope for that key at once, so after unmapping you must re-register
+both yourself, scoped-first. This is how the explorer's `<leader>d1`/`d2`/`dc`
+diff-mark/launch bindings coexist with the global compare.py ones under the
+same keys — see the remapping example below.
+
 The explorer registers the `<leader>f` ("Explorer") file-operation group with
 scope `"explorer"`, so `<leader>fn/fr/fd/fc/fm/fp` only appear while the
 explorer panel is focused.
@@ -385,11 +397,19 @@ carries its own copy of the same guard. Opening the same file the pane already s
 moves the cursor as normal, and the diff session's own setup/teardown is unaffected (it clears
 `compare_window_ids` before opening its panes).
 
-Remapping example (moving off the default `<leader>c*` prefix):
+Remapping example (moving off the default `<leader>c*` prefix). The explorer's own
+`<leader>c1`/`c2`/`cc` diff-mark/launch bindings (see Plugin: Explorer below) also
+use these default keys and get unmapped by the same loop — the `<Plug>ExplorerDiff*`
+lines re-register them, scoped, at the new `d1`/`d2`/`dc` keys. They must come
+*before* the global `<Plug>Compare*` lines below — see the coexistence note in
+[Panel-scoped leader groups](#panel-scoped-leader-groups):
 ```python
 for _k in ("<leader>c1","<leader>c2","<leader>cc","<leader>cj","<leader>ck","<leader>cs","<leader>cr"):
     keymap.nunmap(_k)
 keymap.ngroup("<leader>d", "Diff")
+keymap.nmap("<leader>d1", "<Plug>ExplorerDiffMark1", desc="Mark diff file 1", scope="explorer")
+keymap.nmap("<leader>d2", "<Plug>ExplorerDiffMark2", desc="Mark diff file 2", scope="explorer")
+keymap.nmap("<leader>dc", "<Plug>ExplorerDiffLaunch", desc="Launch diff",     scope="explorer")
 keymap.nmap("<leader>d1",   "<Plug>CompareSelect1",  desc="Compare file 1")
 keymap.nmap("<leader>d2",   "<Plug>CompareSelect2",  desc="Compare file 2")
 keymap.nmap("<leader>dc",   "<Plug>CompareSelected", desc="Compare selected files")
@@ -419,6 +439,9 @@ Requires `peovim.plugins.explorer`.
 | `<leader>fc` | — | Explorer focused | Copy selected entry |
 | `<leader>fm` | — | Explorer focused | Mark selected entry for move |
 | `<leader>fp` | — | Explorer focused | Paste into selected directory |
+| `<leader>c1` | `ExplorerDiffMark1` | Explorer focused | Mark selected file as diff slot 1 |
+| `<leader>c2` | `ExplorerDiffMark2` | Explorer focused | Mark selected file as diff slot 2 |
+| `<leader>cc` | `ExplorerDiffLaunch` | Explorer focused | Launch diff for the two marked slots |
 | `R` | — | Explorer focused | Refresh tree |
 | `<CR>` | — | Explorer focused | Open selected file |
 | `A`–`Z` (any case) | — | Explorer focused, >1 split | Open selected file in the window marked with that letter's badge |
@@ -426,6 +449,15 @@ Requires `peovim.plugins.explorer`.
 
 File operations live under the `<leader>f` group, which which-key only shows
 while the explorer panel is focused (see [Panel-scoped leader groups](#panel-scoped-leader-groups)).
+
+The diff-mark/launch keys (`<leader>c1`/`c2`/`cc`) match `peovim.plugins.compare`'s
+own out-of-the-box defaults for mnemonic consistency, require `peovim.plugins.compare`
+to be loaded (a notification explains if it isn't), and refuse a directory
+selection (mark a file, not a folder). If you've remapped compare's global
+keys (e.g. to `<leader>d1`/`d2`/`dc`, as in the remapping example below),
+remap these the same way and to the same target keys — see the coexistence
+note in [Panel-scoped leader groups](#panel-scoped-leader-groups) for why the
+registration order matters.
 
 Git-backed explorer shows `+` (new), `~` (modified), `!` (deleted) prefixes on entries.
 
@@ -885,6 +917,8 @@ See [§Plugin: Proposed Edit Review](#plugin-proposed-edit-review) for review ke
 | `:SessionList` | List saved sessions |
 | `:SessionDelete` | Delete a saved session |
 | `:RecoverFile` | Recover autosaved content for current file |
+| `:UndoRestore [path]` | Apply unsaved undo history pending from a previous session (current buffer, or `path`) |
+| `:UndoDiscard [path]` | Discard unsaved undo history pending from a previous session, deleting its `.undo` file |
 | `:LspInfo` | Show LSP server status |
 | `:LspRestart` | Restart LSP server |
 | `:checkhealth` | Run health checks |

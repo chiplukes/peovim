@@ -371,6 +371,24 @@ class _ExplorerController:  # cm:1f4c6a
         if path is not None:
             self._paste_into(path)
 
+    def diff_mark(self, slot: int) -> None:
+        """Mark the selected file as compare slot 1/2 (see peovim.plugins.compare)."""
+        if self._api.events.handler_count("compare_select_slot_path") == 0:
+            self._api.ui.notify("Diff viewer not available (add peovim.plugins.compare to init.py)", level="info")
+            return
+        path = self._selected_path()
+        if path is None:
+            return
+        if path.is_dir():
+            _set_status(self._api, f"Diff {slot} requires a file, not a directory")
+            return
+        self._api.events.emit("compare_select_slot_path", slot=slot, path=str(path))
+
+    def diff_launch_selected(self) -> None:
+        """Launch the diff view for the two marked slots (see peovim.plugins.compare)."""
+        if not self._api.keymap.invoke_plug("DiffSelected"):
+            self._api.ui.notify("Diff viewer not available (add peovim.plugins.compare to init.py)", level="info")
+
 
 def setup(api: EditorAPI) -> None:
     """Register explorer keybindings and commands."""
@@ -379,6 +397,21 @@ def setup(api: EditorAPI) -> None:
 
     api.keymap.define_plug("ExplorerToggle", _controller.toggle, desc="Explorer: toggle file tree")
     api.keymap.nmap("<leader>e", "<Plug>ExplorerToggle", desc="Explorer: toggle file tree")
+
+    # Diff/compare integration — mark the selected file as slot 1/2 or launch
+    # the diff view, while the explorer panel is focused. Bound to the same
+    # keys as peovim.plugins.compare's own out-of-the-box <leader>c1/c2/cc
+    # defaults for mnemonic consistency; if you've remapped those (e.g. to
+    # <leader>d1/d2/dc), register these <Plug> targets under the SAME keys,
+    # scope="explorer", BEFORE re-registering the global compare.py Plug —
+    # a scoped binding only coexists with a global one for the same key if
+    # the scoped variant is registered first (see notes/keys.md).
+    api.keymap.define_plug("ExplorerDiffMark1", lambda: _controller.diff_mark(1), desc="Explorer: mark diff slot 1")
+    api.keymap.define_plug("ExplorerDiffMark2", lambda: _controller.diff_mark(2), desc="Explorer: mark diff slot 2")
+    api.keymap.define_plug("ExplorerDiffLaunch", _controller.diff_launch_selected, desc="Explorer: launch diff")
+    api.keymap.nmap("<leader>c1", "<Plug>ExplorerDiffMark1", desc="Mark diff slot 1", scope="explorer")
+    api.keymap.nmap("<leader>c2", "<Plug>ExplorerDiffMark2", desc="Mark diff slot 2", scope="explorer")
+    api.keymap.nmap("<leader>cc", "<Plug>ExplorerDiffLaunch", desc="Launch diff", scope="explorer")
 
     # File operations — leader group active only while the explorer panel is focused.
     api.keymap.ngroup("<leader>f", "Explorer")

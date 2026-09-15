@@ -967,3 +967,63 @@ class TestCompareLiveResync:
         assert summary is not None
         assert summary["blocks"] == 0
         assert api._editor_state.message == "Diff refreshed"
+
+
+class TestVisualRowMappingAcrossPureGaps:
+    """`_visual_row_to_buffer_line`/`_map_scroll_line` for pure insert/delete
+    blocks (no real content on one side at all — the whole block is virtual
+    padding on that side).
+
+    Regression coverage: mapping used to always anchor to the line *before*
+    the gap regardless of how far into it the target visual row actually
+    was, so the far side always rendered the gap's *entire* virtual padding
+    from its top — even when the near side had scrolled almost all the way
+    through (or past) the gap. A viewport near the end of a 50-line
+    delete-only block would map to a scroll position 50 rows off from where
+    it should visually land, filling most of the far pane's screen with
+    padding instead of the real content that should have been in view.
+    """
+
+    def _blocks_with_big_delete(self):
+        from peovim.plugins.compare import compute_blocks
+
+        # left has 40 unique lines (indices 30-69) that don't exist on right at all.
+        left_lines = (
+            [f"common_{i}" for i in range(30)]
+            + [f"gone_{i}" for i in range(40)]
+            + [f"common_{i}" for i in range(70, 100)]
+        )
+        right_lines = [f"common_{i}" for i in range(30)] + [f"common_{i}" for i in range(70, 100)]
+        return compute_blocks(left_lines, right_lines), left_lines, right_lines
+
+    def test_mapping_stays_within_half_gap_width_everywhere(self):
+        from peovim.plugins.compare import _buffer_line_to_visual_row, _map_scroll_line
+
+        blocks, left_lines, _ = self._blocks_with_big_delete()
+        gap_width = 40
+
+        for left_scroll in range(len(left_lines) - 5):
+            mapped = _map_scroll_line(left_scroll, blocks, from_side="left")
+            left_visual = _buffer_line_to_visual_row(left_scroll, blocks, "left")
+            right_visual = _buffer_line_to_visual_row(mapped, blocks, "right")
+            # Inside the gap itself some discrepancy is unavoidable (there's no
+            # real content on the right to align to), but it must never exceed
+            # roughly half the gap's width — the old behavior could be off by
+            # the *entire* gap width once the target was near/past its end.
+            assert abs(left_visual - right_visual) <= gap_width // 2 + 1
+
+    def test_mapping_right_after_gap_is_nearly_exact(self):
+        """The reported scenario: scrolled to just past the end of a big
+        delete-only block. Alignment there should be near-perfect, not off
+        by the full width of the gap."""
+        from peovim.plugins.compare import _buffer_line_to_visual_row, _map_scroll_line
+
+        blocks, left_lines, _ = self._blocks_with_big_delete()
+        # left index 69 is the last "gone_" line; 70 is back to real shared content.
+        for left_scroll in (68, 69, 70, 71):
+            mapped = _map_scroll_line(left_scroll, blocks, from_side="left")
+            left_visual = _buffer_line_to_visual_row(left_scroll, blocks, "left")
+            right_visual = _buffer_line_to_visual_row(mapped, blocks, "right")
+            assert abs(left_visual - right_visual) <= 2, (
+                f"left_scroll={left_scroll} mapped={mapped} left_visual={left_visual} right_visual={right_visual}"
+            )

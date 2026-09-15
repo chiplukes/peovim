@@ -130,7 +130,7 @@ class TestDocumentRestoreUndo:
         assert doc2.dirty is False
 
     def test_restore_undo_dirty_state(self, tmp_path: Path) -> None:
-        """Unsaved edits are replayed on reload."""
+        """Unsaved edits are available (but not auto-applied) on reload."""
         filepath = tmp_path / "doc.py"
         filepath.write_text("hello")
 
@@ -140,19 +140,26 @@ class TestDocumentRestoreUndo:
         assert doc.get_text() == "hello world"
         doc.flush_undo()
 
-        # Reload — dirty edits should be restored
+        # Reload — dirty edits are pending, not silently applied.
         doc2 = Document()
         doc2.load(filepath)
+        assert doc2.get_text() == "hello"
+        assert doc2.dirty is False
+        assert doc2.has_pending_undo_restore() == 1
+
+        # Explicitly restoring applies them.
+        assert doc2.restore_pending_undo() == 1
         assert doc2.get_text() == "hello world"
         assert doc2.dirty is True
+        assert doc2.has_pending_undo_restore() == 0
 
         # Undo should work
         result = doc2.undo()
         assert result is not None
         assert doc2.get_text() == "hello"
 
-    def test_restore_undo_dirty_then_save(self, tmp_path: Path) -> None:
-        """Dirty edits replayed, then save makes them clean."""
+    def test_restore_undo_dirty_state_discarded(self, tmp_path: Path) -> None:
+        """Discarding pending unsaved edits leaves the buffer at the saved content."""
         filepath = tmp_path / "doc.py"
         filepath.write_text("hello")
 
@@ -163,6 +170,34 @@ class TestDocumentRestoreUndo:
 
         doc2 = Document()
         doc2.load(filepath)
+        assert doc2.has_pending_undo_restore() == 1
+
+        assert doc2.discard_pending_undo() is True
+        assert doc2.get_text() == "hello"
+        assert doc2.dirty is False
+        assert doc2.has_pending_undo_restore() == 0
+        # Discarding a second time is a no-op, not an error.
+        assert doc2.discard_pending_undo() is False
+
+        # The on-disk undo file is gone — a fresh load finds nothing pending.
+        doc3 = Document()
+        doc3.load(filepath)
+        assert doc3.has_pending_undo_restore() == 0
+        assert doc3.get_text() == "hello"
+
+    def test_restore_undo_dirty_then_save(self, tmp_path: Path) -> None:
+        """Dirty edits, once explicitly restored, then save makes them clean."""
+        filepath = tmp_path / "doc.py"
+        filepath.write_text("hello")
+
+        doc = Document()
+        doc.load(filepath)
+        doc.insert(line=0, col=5, text=" world")
+        doc.flush_undo()
+
+        doc2 = Document()
+        doc2.load(filepath)
+        assert doc2.restore_pending_undo() == 1
         assert doc2.get_text() == "hello world"
         assert doc2.dirty is True
 
@@ -204,12 +239,14 @@ class TestDocumentRestoreUndo:
 
         doc2 = Document()
         doc2.load(filepath)
+        assert doc2.restore_pending_undo() == 1
         assert doc2.get_text() == "abcd"
         doc2.insert(line=0, col=4, text="e")
         doc2.flush_undo()
 
         doc3 = Document()
         doc3.load(filepath)
+        assert doc3.restore_pending_undo() == 2
         assert doc3.get_text() == "abcde"
 
         # Undo twice to get back to "abc"
@@ -250,6 +287,7 @@ class TestDocumentRestoreUndo:
 
         doc2 = Document()
         doc2.load(filepath)
+        assert doc2.restore_pending_undo() == 1
         expected = text + append
         assert doc2.get_text() == expected
 

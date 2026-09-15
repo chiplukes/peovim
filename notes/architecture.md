@@ -869,7 +869,143 @@ diff panes — mostly redundant with the render-controller fix but keeps
 `window.visible_range()` correct for code that reads it before the next render
 frame (e.g. `on_cursor_moved`'s cross-pane scroll sync).
 
-There's a second, independent place the identical bug lived:
+**`sync_window_render_state`'s `max_scroll` clamp** was itself blind to virtual
+lines: it capped `scroll_line` at `document.line_count() - height` — a raw
+buffer-line count. When virtual rows fall in the remaining unscrolled tail of a
+(shorter) pane, they consume viewport space too, so more buffer-line scroll is
+actually needed to reach the end than the line count alone suggests — the naive
+clamp silently capped scrolling short of that (visible as mouse-wheel/`<C-d>`-style
+scrolling in a diff pane hitting a limit before reaching the true end). Fixed by
+computing the limit in visual-row space (`buffer_line_to_visual_row(line_count,
+spans)` minus height, converted back through `visual_row_to_buffer_line`) whenever
+spans are present, mirroring the follow-cursor branch just below it.
+
+**`compare.py`'s `on_cursor_moved`** (fires on every cursor move in a diff pane,
+computes the block-aligned scroll position for the *other* pane via
+`_map_scroll_line`, then clamps that pane's cursor to hold the position through
+the next render) had two related bugs that together produced persistent
+misalignment between the two panes during plain `j`/`k` navigation, worst during
+continuous scrolling in one direction:
+- The cursor clamp used a raw `[scroll, scroll+height-1]` buffer-line range,
+  ignoring `scrolloff`. `sync_window_render_state`'s own follow-cursor logic
+  *does* respect scrolloff, so on the very next render frame it would see the
+  clamped cursor sitting inside the margin and "correct" the scroll it had no
+  part in computing — fighting the alignment `on_cursor_moved` just set.
+- It read the active pane's scroll via `window.visible_range()`, which reflects
+  the *previous* frame's value — `cursor_moved` fires synchronously inside
+  `dispatch()`, before the next render's `sync_window_render_state` updates
+  the active pane's own scroll for the cursor's new position. Mapping from a
+  stale value meant the other pane was always chasing where the active pane
+  *was*, not where it was about to be — a permanent one-frame lag during
+  continuous movement.
+
+Both fixed in `on_cursor_moved`: the clamp now mirrors `scroll_line_for_cursor`'s
+exact stability condition in visual-row space (`[scroll_visual + margin,
+scroll_visual + height - 1 - margin]`, `margin` capped to half the window height
+same as scrolloff normally is), and the active pane's own upcoming scroll is
+*predicted* (replicating the same follow-cursor math against its current cursor
+position) rather than read stale, before mapping to the other side. Regression
+coverage in `tests/test_compare_scroll_alignment.py` (uses the real, non-mocked
+harness plus the real `WindowRenderController` — the interaction between the two
+is exactly what the bug lived in).
+
+**`handle_scroll_view`** (`peovim/modal/dispatcher_modes.py`, handles `ScrollView` —
+mouse wheel, `<C-d>`/`<C-u>`/`<C-e>`/`<C-y>`/`<C-f>`/`<C-b>`) had a related bug that
+made mouse-wheel scrolling inside a diff pane appear to hit a limit well short of
+the real end of the file, and — combined with `on_cursor_moved`'s cross-pane
+mapping — let the two panes end up wildly apart (e.g. a landmark line sitting near
+the top of one pane and the bottom of the other) before "snapping" back together.
+It moved `scroll_line` directly and clamped the cursor into the *raw* viewport
+range `[scroll_line, scroll_line + height - 1]`, with no `scrolloff` margin. Real
+vim semantics for a manual scroll: if that would put the cursor within `scrolloff`
+of an edge, the *cursor* moves to hold the margin, not the view. Instead, the
+cursor was left right at the edge, so the very next render frame's follow-cursor
+pass (which *does* enforce scrolloff — see above) decided the margin was violated
+and pulled `scroll_line` straight back down to satisfy it — silently undoing the
+wheel tick. Each subsequent tick repeated the same fight, permanently freezing the
+viewport at whatever `scroll_line` value happened to satisfy `cursor - scrolloff`
+for the (also frozen) cursor line.
+
+First attempt at a fix: clamp the cursor into a visual-row-space scrolloff margin
+(`buffer_line_to_visual_row` → adjust → `visual_row_to_buffer_line`), mirroring
+`on_cursor_moved`'s clamp. This fixed the common case but not scrolling back up
+*after having reached the bottom* — near a virtual span, the fix would still
+permanently freeze the viewport, just farther along (found by scrolling all the
+way to the end of a real diff and back up). Root cause: `visual_row_to_buffer_line`
+intentionally collapses every visual row *inside* a span to a single buffer line —
+correct for "which line to scroll to so this span becomes visible", but this makes
+the visual→buffer direction non-invertible right at a span. Computing the clamp by
+going buffer→visual→(adjust)→buffer can land on a cursor value that
+`scroll_line_for_cursor` (the *forward* function, buffer→visual→decide→buffer)
+disagrees is stable for the scroll `handle_scroll_view` just set — the two
+computations solve the stability condition for different variables (one assumes
+scroll is ground truth and solves for cursor; the other assumes cursor is ground
+truth and solves for scroll) and aren't guaranteed to agree when that mapping isn't
+one-to-one.
+
+Actual fix: don't compute an independent inverse. Use `scroll_line_for_cursor`
+itself as the oracle. If the current cursor is already stable relative to the new
+`scroll_line`, leave it alone (matches `<C-e>`/`<C-y>` semantics — the view moves,
+the cursor doesn't, until it would go off-screen). If it isn't, walk the cursor one
+line at a time in the scroll's direction — re-checking the *same* function the
+render will call — until it agrees, bounded to `max(64, height * 2)` iterations
+(always terminates; a span wider than that would already be handled by
+`scroll_line_for_cursor`'s own line-by-line widening loop). Querying the exact
+function that will run next frame, instead of trying to predict its answer via a
+separately-derived formula, is what actually guarantees no fight — this is the
+same lesson as `on_cursor_moved`'s "predict, don't read stale" fix above, taken one
+step further: predicting isn't enough if the prediction formula itself can diverge
+from the oracle; query the oracle directly when the two directions aren't provably
+equivalent.
+
+**`compare.py`'s `_visual_row_to_buffer_line`** (the module-level, `blocks`-based
+variant used by `_map_scroll_line` for cross-pane alignment — distinct from
+`peovim.core.virtual_lines`'s decoration-based one) had a genuine mapping bug, not
+a fight between two code paths: for a pure insert/delete block (no real content at
+all on one side — the whole block is virtual padding there, e.g. 50 lines that
+exist only in the left file), it always anchored to the buffer line *before* the
+gap, regardless of how far into (or past) the gap the target visual row actually
+was. Reported symptom: scrolling the left pane to near the *end* of a large
+delete-only block (~1 row from its end) still mapped the right pane's scroll to
+*before the gap's start* — right rendered the gap's entire virtual padding from the
+top, filling most of its screen with padding while showing almost none of the real
+content that should have been in view, and put a landmark line (`if __name__ ==
+"__main__":`) near the top of one pane and near the bottom of the other. Confirmed
+directly: mapping left's scroll to right returned a buffer line whose own visual
+position was 50 rows off from left's — the two panes' viewport tops genuinely
+weren't at the same visual row.
+
+There's no way to fully solve this — `scroll_line` is a single buffer-line index,
+and a virtual gap has no real line "20 rows into it" to point at, so *some*
+discrepancy inside the gap itself is unavoidable. Fixed by snapping to whichever
+edge of the gap the target visual row is actually closer to (`buf_start - 1` if
+in the first half, `buf_end` — skipping straight past the gap — if in the second),
+instead of always snapping to the start. Bounds the worst-case discrepancy to
+roughly half the gap's width (only while genuinely *inside* the gap) instead of
+its full width, and makes the near-exact case — a viewport that's mostly or
+entirely past the gap, the common and most visible case — actually near-exact
+(1-row discrepancy in the reported scenario, down from 50).
+
+Worth noting for anyone chasing a similar scrolloff issue elsewhere: `Window`
+(`peovim/core/window.py`) is deliberately decoupled from `OptionsStore` — it only
+has its own `self.options: dict` (window-local *overrides*, empty unless a plugin
+sets one explicitly), not the effective global value. `Window.scroll_to_cursor()`
+reads `self.options.get("scrolloff", 0)` directly, so **global `scrolloff` has no
+effect through that method** — every one of its many callers (LSP jumps, search,
+markers, flash, outline, workspace_symbols, references_panel, `<C-o>`/`<C-i>`
+navigation, `sync_window_render_state`'s non-diff branch, …) effectively runs with
+scrolloff=0 no matter what `options.set("scrolloff", N)` says. The virtual-line-aware
+branch in `sync_window_render_state` avoids this because it explicitly merges
+`global_opts` before reading scrolloff, which is also why this diff-pane bug was
+straightforward to find (that's the one path where scrolloff genuinely does apply)
+but a plain, non-diff window's mouse-wheel/`<C-d>` scrolling won't exhibit the same
+"fights back" symptom today — scrolloff silently doesn't apply there at all, so
+there's nothing to fight. Threading the effective scrolloff into `scroll_to_cursor()`
+(and its ~15 call sites) is a separate, not-yet-done fix — flagged here rather than
+folded into this session's diff-pane work since it's a materially larger change
+with its own scope.
+
+There's a second, independent place the identical original bug lived:
 `TerminalCursorController.resolve_terminal_cursor_state()`
 (`peovim/ui/cursor_controller.py`) positions the *real terminal cursor* — used
 instead of the painted cursor cell whenever `cursorblink` is on or a bar-shaped
@@ -1123,19 +1259,46 @@ Each undo file records:
 - `dirty_count` — number of unsaved entries at the end of the stack
 
 **Lifecycle:**
-- On `Document.load()`: reads undo file, validates hash. If matched, replays
-  dirty entries forward to reconstruct unsaved document state, then loads all
-  entries into the undo stack. If hash mismatched, discards as stale.
+- On `Document.load()`: reads undo file, validates hash, via
+  `_check_pending_undo_restore()`. If `dirty_count == 0` (nothing unsaved was
+  pending), the stack/redo entries are loaded into the undo stack immediately —
+  same as before, `u`/`<C-r>` just work. If `dirty_count > 0`, the load does
+  **not** auto-replay; the buffer opens clean (matching what's on disk) and the
+  parsed entries are stashed on `Document._pending_undo_restore`. If hash
+  mismatched, discards as stale.
+- `open_path_in_window` (dispatcher_buffers.py) checks
+  `Document.has_pending_undo_restore()` after load and, if non-zero, sets a
+  non-blocking status message telling the user how many unsaved changes from a
+  previous session are available and pointing at `:UndoRestore`/`:UndoDiscard`.
+  This mirrors the "Mixed line endings detected" message pattern.
+- `:UndoRestore [path]` calls `Document.restore_pending_undo()`, which replays
+  the stashed dirty entries onto the buffer (marking it dirty) and loads the
+  full stack/redo history, same effect the old automatic behavior had — but now
+  opt-in. Returns the number of groups replayed (0 if nothing was pending).
+- `:UndoDiscard [path]` calls `Document.discard_pending_undo()`, which drops the
+  stashed entries and deletes the on-disk `.undo` file so the prompt won't
+  reappear. Returns whether there was anything to discard.
+- Both commands default to the current buffer's document when `path` is
+  omitted; otherwise resolve `path` against open documents in the workspace.
 - On every edit: sets `_undo_flush_needed = True` on the Document.
 - Periodic (5s): `EventLoopRuntimeController.run_undo_flush()` writes dirty undo
   stores to disk (gated by the `undofile` option).
 - On `:w` save: immediate flush via `Document.save()`.
 - On editor exit: `flush_undo_documents()` writes all dirty undo stores.
 
+**Known edge case:** if a pending restore exists and the user starts editing
+without running `:UndoRestore`/`:UndoDiscard` first, a later flush writes the
+new (post-load) `UndoStack` to disk, overwriting the still-pending old entries
+— they're only reachable through `_pending_undo_restore`, not the live stack,
+until explicitly restored.
+
 **Modules involved:**
 - `peovim/core/persistence_undo.py` — msgpack read/write/delete, hash validation
 - `peovim/core/history.py` — `UndoStack.get_entries()` / `restore_from_entries()`
-- `peovim/core/document.py` — `flush_undo()`, `_restore_undo()`, dirty tracking
+- `peovim/core/document.py` — `flush_undo()`, `_check_pending_undo_restore()`,
+  `has_pending_undo_restore()`, `restore_pending_undo()`, `discard_pending_undo()`
+- `peovim/modal/dispatcher_buffers.py` — `open_path_in_window()` status message
+- `peovim/commands/builtin.py` — `:UndoRestore` / `:UndoDiscard` ex-commands
 - `peovim/ui/runtime_controller.py` — periodic tick + shutdown flush
 
 **Validation on reload:** The stored `file_hash` is compared against a fresh

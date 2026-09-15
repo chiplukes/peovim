@@ -1023,6 +1023,79 @@ class TestBufferAPI:
 
         assert "\t" not in target.read_text(encoding="utf-8")
 
+    # ------------------------------------------------------------------
+    # Mutation targeting — insert/delete/replace/batch must always hit
+    # self._doc, never whatever window happens to be active. Regression
+    # coverage for the diff-compare bug where a deferred callback (e.g.
+    # tabs_to_spaces reacting to buffer_opened via api.defer()) mutated a
+    # non-active buffer and the edit landed on the active buffer instead.
+    # ------------------------------------------------------------------
+
+    def _two_buffer_setup(self):
+        """window1/buf1 active initially; window2/buf2 created via a split,
+        then focus is switched back to window1 so buf2 is NOT active."""
+        api = _make_api()
+        buf1 = api.open_scratch_buffer("one\ntwo", name="buf1")
+        api.split_window("v")
+        buf2 = api.open_scratch_buffer("alpha\nbeta", name="buf2")
+        win1 = next(w for w in api.list_windows() if w.buffer().buf_id == buf1.buf_id)
+        api.activate_window(win1)
+        assert api.active_buffer().buf_id == buf1.buf_id
+        return api, buf1, buf2
+
+    def test_insert_on_inactive_buffer_does_not_touch_active_buffer(self):
+        api, buf1, buf2 = self._two_buffer_setup()
+
+        buf2.insert(0, 0, "X")
+
+        assert buf2.get_text() == "Xalpha\nbeta"
+        assert api.active_buffer().buf_id == buf1.buf_id
+        assert api.active_buffer().get_text() == "one\ntwo"
+
+    def test_replace_on_inactive_buffer_does_not_touch_active_buffer(self):
+        api, buf1, buf2 = self._two_buffer_setup()
+
+        buf2.replace(0, 0, 1, len("beta"), "ZZZ")
+
+        assert buf2.get_text() == "ZZZ"
+        assert api.active_buffer().buf_id == buf1.buf_id
+        assert api.active_buffer().get_text() == "one\ntwo"
+
+    def test_delete_on_inactive_buffer_does_not_touch_active_buffer(self):
+        api, buf1, buf2 = self._two_buffer_setup()
+
+        buf2.delete(0, 0, 0, len("alpha"))
+
+        assert buf2.get_text() == "\nbeta"
+        assert api.active_buffer().buf_id == buf1.buf_id
+        assert api.active_buffer().get_text() == "one\ntwo"
+
+    def test_batch_on_inactive_buffer_does_not_touch_active_buffer(self):
+        api, buf1, buf2 = self._two_buffer_setup()
+
+        with buf2.batch():
+            buf2.insert(0, 0, "X")
+            buf2.insert(0, 0, "Y")
+
+        assert buf2.get_text() == "YXalpha\nbeta"
+        assert api.active_buffer().buf_id == buf1.buf_id
+        assert api.active_buffer().get_text() == "one\ntwo"
+
+    def test_insert_on_buffer_shown_in_no_window_falls_back_to_direct_mutation(self):
+        api = _make_api("one\ntwo")
+        from peovim.core.document import Document
+
+        doc = Document()
+        doc.load_string("orphan")
+        api._workspace.add_document(doc)
+        buf = api.buffer_by_id(id(doc))
+        assert buf is not None
+
+        buf.insert(0, 0, "X")
+
+        assert buf.get_text() == "Xorphan"
+        assert api.active_buffer().get_text() == "one\ntwo"
+
 
 # ---------------------------------------------------------------------------
 # WindowAPI
