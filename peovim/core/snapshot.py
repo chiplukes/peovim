@@ -55,3 +55,6 @@ class WindowSnapshot:
     height: int  # window height in cells
     options: dict  # treat as read-only; frozen at creation time
     closed_folds: tuple = ()  # tuple[(start_line, end_line), ...] sorted by start
+    # Rows into the virtual-line block anchored right after scroll_line to start
+    # painting from, instead of from that block's top — see Window.scroll_virtual_skip.
+    scroll_virtual_skip: int = 0

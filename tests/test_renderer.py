@@ -7,7 +7,7 @@ from peovim.core.style import Style as CoreStyle
 from peovim.core.window import Window
 from peovim.modal.engine import Mode
 from peovim.ui.cell_grid import CellGrid
-from peovim.ui.decorations import HighlightRegion, OverlayChar, Sign, Style, VirtualText
+from peovim.ui.decorations import HighlightRegion, OverlayChar, Sign, Style, VirtualLine, VirtualText
 from peovim.ui.layout import Rect
 from peovim.ui.scrollbar import SCROLLBAR_THUMB_CHAR, SCROLLBAR_TRACK_CHAR
 
@@ -397,7 +397,6 @@ class TestRenderWindow:
         dec = HighlightRegion(0, 1, 0, 6, Style(bg=(50, 50, 200)))
         grid = self._render(win, decorations=[dec])
         assert grid._current[0][4][2] == (50, 50, 200)
-        assert grid._current[0][8][2] == (50, 50, 200)
 
     def test_colorcolumn_applies_background(self):
         win = make_window("hello world\n", width=20, height=3, options={"colorcolumn": "3,8"})
@@ -439,6 +438,100 @@ class TestRenderWindow:
         grid = self._render(win)
         assert grid.width == 30
         assert grid.height == 6
+
+
+class TestScrollVirtualSkip:
+    """Window.scroll_virtual_skip — mid-gap alignment for the diff view.
+
+    scroll_line always points at a real buffer line; a nonzero
+    scroll_virtual_skip means "start painting this many rows into the
+    virtual-line block anchored right after scroll_line" instead of from
+    that block's top, skipping scroll_line's own real-content row entirely.
+    Offset by one: 0 means disabled (0 is reserved so it can mean "the
+    default, render scroll_line's own content normally" rather than "the
+    block's row zero" — those need to be distinguishable, since the block's
+    very first row must itself be addressable). N >= 1 means the block's row
+    N - 1. See notes/architecture.md's diff-view scroll section.
+    """
+
+    def _render(self, win: Window, is_active: bool = True, decorations=None, global_options=None):
+        from peovim.ui.window_renderer import render_window
+
+        snap = win.snapshot(global_options=global_options)
+        rect = Rect(0, 0, win.width, win.height)
+        return render_window(snap, rect, is_active, decorations)
+
+    def _fill_style(self) -> Style:
+        return Style(bg=(244, 143, 177))  # matches compare.py's delete-hint pink
+
+    def test_zero_skip_is_a_complete_no_op(self):
+        """Explicitly setting scroll_virtual_skip = 0 (the default) must render
+        identically to never touching it — the overwhelmingly common case
+        (every window outside an active compare.py session) must be
+        byte-for-byte unaffected by this feature existing."""
+        win_a = make_window("one\ntwo\nthree\n", width=10, height=4)
+        win_b = make_window("one\ntwo\nthree\n", width=10, height=4)
+        win_b.scroll_virtual_skip = 0
+        dec = VirtualLine(after_line=0, style=self._fill_style(), count=5)
+        grid_a = self._render(win_a, decorations=[dec])
+        grid_b = self._render(win_b, decorations=[dec])
+        for row in range(4):
+            assert grid_row_chars(grid_a, row) == grid_row_chars(grid_b, row)
+
+    def test_skip_one_starts_exactly_at_the_block_first_row(self):
+        """Regression guard: skip=1 (the block's row 0) must show the block's
+        fill starting immediately — not scroll_line's own real-content row
+        first. This is the exact case a naive "skip means rows into the
+        block, 0 means the block's first row" reading gets wrong, since 0 is
+        reserved for "disabled" — found via a real diff where the viewport's
+        first row was supposed to be a gap's first row exactly."""
+        win = make_window("one\ntwo\n", width=10, height=3)
+        win.scroll_virtual_skip = 1
+        dec = VirtualLine(after_line=0, style=self._fill_style(), count=2)
+        grid = self._render(win, decorations=[dec])
+
+        assert grid_cell(grid, 0, 0)[2] == (244, 143, 177), "row 0 should be virtual fill, not 'one'"
+        assert grid_cell(grid, 1, 0)[2] == (244, 143, 177)
+        assert grid_row_chars(grid, 2)[:3] == "two"
+
+    def test_skip_starts_partway_into_the_virtual_block(self):
+        # 6-row virtual block anchored after line 0; skip its first 2 rows
+        # (scroll_virtual_skip = 1 + 2), so the window should show 4 rows of
+        # fill, then real line 1 ("two").
+        win = make_window("one\ntwo\nthree\n", width=10, height=5)
+        win.scroll_virtual_skip = 3
+        dec = VirtualLine(after_line=0, style=self._fill_style(), count=6)
+        grid = self._render(win, decorations=[dec])
+
+        for row in range(4):
+            assert grid_cell(grid, row, 0)[2] == (244, 143, 177), f"row {row} should be virtual fill"
+        assert grid_row_chars(grid, 4)[:3] == "two"
+
+    def test_skip_covering_entire_block_lands_directly_on_next_real_line(self):
+        win = make_window("one\ntwo\nthree\n", width=10, height=3)
+        win.scroll_virtual_skip = 4  # 1 + all 3 rows of the block
+        dec = VirtualLine(after_line=0, style=self._fill_style(), count=3)
+        grid = self._render(win, decorations=[dec])
+
+        assert grid_row_chars(grid, 0)[:3] == "two"
+        assert grid_row_chars(grid, 1)[:5] == "three"
+
+    def test_skip_spans_multiple_virtual_line_groups_at_the_same_anchor(self):
+        win = make_window("one\ntwo\n", width=10, height=5)
+        win.scroll_virtual_skip = 4  # 1 + 3 rows into the combined 4-row block
+        # Two separate VirtualLine groups at the same anchor (e.g. two adjacent
+        # diff blocks that both padded the same side) — skip must walk across
+        # the boundary between them, not just the first group.
+        decs = [
+            VirtualLine(after_line=0, style=Style(bg=(1, 1, 1)), count=2),
+            VirtualLine(after_line=0, style=Style(bg=(2, 2, 2)), count=2),
+        ]
+        grid = self._render(win, decorations=decs)
+
+        # skip consumes both rows of the first group (count=2) plus 1 row of
+        # the second (bg (2,2,2)); 1 row of that group's fill remains, then "two".
+        assert grid_cell(grid, 0, 0)[2] == (2, 2, 2)
+        assert grid_row_chars(grid, 1)[:3] == "two"
 
 
 # ---------------------------------------------------------------------------

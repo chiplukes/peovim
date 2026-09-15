@@ -442,6 +442,7 @@ Requires `peovim.plugins.explorer`.
 | `<leader>c1` | `ExplorerDiffMark1` | Explorer focused | Mark selected file as diff slot 1 |
 | `<leader>c2` | `ExplorerDiffMark2` | Explorer focused | Mark selected file as diff slot 2 |
 | `<leader>cc` | `ExplorerDiffLaunch` | Explorer focused | Launch diff for the two marked slots |
+| `<leader>dw` | `ExplorerDiffHead` | Explorer focused | Diff selected file against HEAD (see `peovim.plugins.gitsigns`; requires no `git status` entry) |
 | `R` | — | Explorer focused | Refresh tree |
 | `<CR>` | — | Explorer focused | Open selected file |
 | `A`–`Z` (any case) | — | Explorer focused, >1 split | Open selected file in the window marked with that letter's badge |
@@ -478,7 +479,7 @@ Requires `peovim.plugins.gitsigns`. Shows git change gutters and supports hunk n
 | `]c` | `GitsignsNextHunk` | Jump to next git hunk |
 | `[c` | `GitsignsPrevHunk` | Jump to previous git hunk |
 | `<leader>gs` | `GitsignsStatusPanel` | Toggle git status panel |
-| — | `GitsignsDiffHead` | Diff a file (default: active buffer) against HEAD; no default key, see `:GitDiffHead` — bound to `<leader>dw` in the Diff/Compare group above |
+| — | `GitsignsDiffHead` | Diff a file (default: active buffer) against HEAD; no default key, see `:GitDiffHead` — bound to `<leader>dw` in the Diff/Compare group above. Explorer-focused equivalent (diffs the *selected* file, not the active buffer): `ExplorerDiffHead`, bound to the same `<leader>dw` key with `scope="explorer"` — see the Explorer table above. |
 
 > **Note:** `]c` / `[c` are also the default next/prev diff block keys in the compare plugin. If both plugins are loaded, whichever is loaded last wins for those keys. Remap one to avoid the conflict.
 

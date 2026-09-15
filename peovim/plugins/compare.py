@@ -275,8 +275,31 @@ class _CompareController:
         else:
             predicted_visual = active_visual_scroll
         scroll = _visual_row_to_buffer_line(max(0, predicted_visual), session.blocks, from_side)
-        other_scroll = _map_scroll_line(scroll, session.blocks, from_side=from_side)
-        other_win.set_scroll_line(other_scroll)
+        # Exact position, not the nearer-edge snap _map_scroll_line uses — lets the
+        # other pane render partway into a large insert/delete-only block instead of
+        # always jumping to whichever edge is closer (see Window.scroll_virtual_skip
+        # and _visual_row_to_scroll_position).
+        other_scroll, other_skip = _map_scroll_position(scroll, session.blocks, from_side=from_side)
+        other_win.set_scroll_line(other_scroll, virtual_skip=other_skip)
+        if other_skip > 0:
+            # Genuinely mid-gap: there is no real line that both (a) sits
+            # visually inside the currently-rendered viewport and (b) is a
+            # correct, stable "cursor position" for it — the whole viewport is
+            # virtual padding. Picking the nearest real line anyway (the old
+            # approach below) can jump discontinuously from "before the gap"
+            # to "after it" as the viewport scrolls smoothly through — and a
+            # cursor landing on a real line far outside the rendered range
+            # makes the render's generic follow-cursor logic conclude the
+            # position is unstable and yank the scroll to match the cursor
+            # instead of the deliberate mid-gap placement just computed above.
+            # Track the anchor line (other_scroll) so the cursor isn't left
+            # stale for whenever the gap is eventually exited (a stale value
+            # clamped against fresh margins on exit caused its own transition
+            # glitch), but pass follow_cursor=False so that generic logic
+            # still never runs for other_win while it's mid-gap.
+            if other_win.cursor[0] != other_scroll:
+                other_win.set_cursor(other_scroll, other_win.cursor[1], follow_cursor=False)
+            return
         # Clamp the other pane's cursor into the new visible range, respecting
         # scrolloff — sync_window_render_state's own follow-cursor logic (which
         # DOES respect scrolloff — see scroll_line_for_cursor) runs on the very
@@ -1010,22 +1033,16 @@ def _buffer_line_to_visual_row(line: int, blocks: tuple[CompareBlock, ...], side
 
 
 def _visual_row_to_buffer_line(visual_row: int, blocks: tuple[CompareBlock, ...], side: str) -> int:
-    """Convert a visual row index to the buffer line that should be at the top of the viewport.
+    """Convert a visual row index to the buffer line that should hold the cursor.
 
     For visual rows occupied by virtual lines (no buffer content on `side` — a pure
     insert/delete block, all padding), there's no real line *at* that exact visual
-    row to point to, so this snaps to whichever edge of the gap the target is closer
-    to: before it (`buf_start - 1`, so the whole gap renders from its top — right for
-    a target near the gap's start) or after it (`buf_end`, skipping straight to the
-    next real content — right once the target is more than halfway through the gap).
-    Always anchoring "before" regardless of depth (the previous behavior) made the
-    far side always render the *entire* virtual gap from its start even when the
-    near side had already scrolled deep into or past it — e.g. mapping a viewport
-    near the *end* of a 50-line delete block still pointed the other side at the
-    very top of that block's virtual padding, filling most of its screen with an
-    off-by-tens-of-rows block of padding instead of the real content that should
-    have been in view. See `_map_scroll_line`, the only caller that hits this path
-    for anything other than an exact block boundary.
+    row — a cursor can never sit inside virtual-only padding — so this snaps to
+    whichever edge of the gap the target is closer to: before it (`buf_start - 1`)
+    or after it (`buf_end`, skipping straight to the next real content). For
+    *scroll* positioning (the viewport top, which — unlike a cursor — legitimately
+    can and should render partway into a gap) use `_visual_row_to_scroll_position`
+    instead, which returns the exact offset rather than snapping.
     """
     vis_pos = 0
     buf_pos = 0
@@ -1054,6 +1071,45 @@ def _visual_row_to_buffer_line(visual_row: int, blocks: tuple[CompareBlock, ...]
     return buf_pos + (visual_row - vis_pos)
 
 
+def _visual_row_to_scroll_position(visual_row: int, blocks: tuple[CompareBlock, ...], side: str) -> tuple[int, int]:
+    """Convert a visual row to an exact (buffer_line, virtual_skip) *scroll* position.
+
+    Unlike `_visual_row_to_buffer_line` (which snaps to a real line since a cursor
+    can't sit inside virtual padding), a viewport top legitimately can — and for
+    exact cross-pane alignment, must — start partway into a virtual-only gap. When
+    `visual_row` falls inside one, this returns `(buf_start - 1, offset_into_span + 1)`:
+    `Window.scroll_virtual_skip` tells the renderer to skip `buf_start - 1`'s own
+    real-content row entirely, plus `offset_into_span` rows of the gap, before
+    painting begins — landing exactly on `visual_row` instead of approximating it
+    (the "+ 1" is scroll_virtual_skip's own reserved-zero-means-disabled offset,
+    not an extra row skipped — see Window.scroll_virtual_skip). Outside any gap,
+    `virtual_skip` is always 0 and `buffer_line` matches `_visual_row_to_buffer_line`
+    exactly.
+    """
+    vis_pos = 0
+    buf_pos = 0
+    for block in blocks:
+        buf_start = block.left_start if side == "left" else block.right_start
+        buf_end = block.left_end if side == "left" else block.right_end
+
+        equal_vis = buf_start - buf_pos
+        if visual_row < vis_pos + equal_vis:
+            return buf_pos + (visual_row - vis_pos), 0
+        vis_pos += equal_vis
+
+        block_vis = _block_visual_rows(block)
+        if visual_row < vis_pos + block_vis:
+            block_buf_count = buf_end - buf_start
+            if block_buf_count > 0:
+                return buf_start + min(visual_row - vis_pos, block_buf_count - 1), 0
+            return max(0, buf_start - 1), (visual_row - vis_pos) + 1
+
+        vis_pos += block_vis
+        buf_pos = buf_end
+
+    return buf_pos + (visual_row - vis_pos), 0
+
+
 def _map_scroll_line(line: int, blocks: tuple[CompareBlock, ...], *, from_side: str) -> int:
     """Map a viewport-top buffer line on one diff side to the equivalent buffer line on the other.
 
@@ -1064,6 +1120,18 @@ def _map_scroll_line(line: int, blocks: tuple[CompareBlock, ...], *, from_side: 
     to_side = "right" if from_side == "left" else "left"
     vis = _buffer_line_to_visual_row(line, blocks, from_side)
     return _visual_row_to_buffer_line(vis, blocks, to_side)
+
+
+def _map_scroll_position(line: int, blocks: tuple[CompareBlock, ...], *, from_side: str) -> tuple[int, int]:
+    """Like `_map_scroll_line`, but returns the exact `(buffer_line, virtual_skip)`
+    scroll position instead of snapping to a gap's nearer edge — see
+    `_visual_row_to_scroll_position`. Used by `on_cursor_moved` so the two
+    panes stay exactly aligned even while scrolled partway into a large
+    insert/delete-only block, matching dedicated diff tools.
+    """
+    to_side = "right" if from_side == "left" else "left"
+    vis = _buffer_line_to_visual_row(line, blocks, from_side)
+    return _visual_row_to_scroll_position(vis, blocks, to_side)
 
 
 def compute_blocks(left_lines: list[str], right_lines: list[str]) -> tuple[CompareBlock, ...]:

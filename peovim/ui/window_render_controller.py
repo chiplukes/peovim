@@ -127,7 +127,14 @@ class WindowRenderController:  # cm:9d6c3f
             max_scroll = visual_row_to_buffer_line(max(0, total_visual - rect.height), spans)
         else:
             max_scroll = max(0, line_count - rect.height)
-        window.scroll_line = max(0, min(window.scroll_line, max_scroll))
+        clamped_scroll = max(0, min(window.scroll_line, max_scroll))
+        if clamped_scroll != window.scroll_line:
+            # Landed on a different position than whatever set scroll_line (if
+            # that was compare.py's deliberate mid-gap placement, this max-scroll
+            # clamp overriding it means any virtual_skip no longer applies to
+            # wherever we actually ended up).
+            window.scroll_virtual_skip = 0
+        window.scroll_line = clamped_scroll
         if getattr(window, "follow_cursor", True):
             if spans:
                 # scroll_to_cursor() reasons in raw buffer-line space and has no notion
@@ -140,13 +147,19 @@ class WindowRenderController:  # cm:9d6c3f
                 from peovim.core.virtual_lines import scroll_line_for_cursor
 
                 opts = {**(global_opts or {}), **getattr(window, "options", {})}
-                window.scroll_line = scroll_line_for_cursor(
+                new_scroll = scroll_line_for_cursor(
                     cursor_line=window.cursor.line,
                     scroll_line=window.scroll_line,
                     height=rect.height,
                     scrolloff=int(opts.get("scrolloff", 0) or 0),
                     spans=spans,
+                    virtual_skip=getattr(window, "scroll_virtual_skip", 0),
                 )
+                if new_scroll != window.scroll_line:
+                    # Not the same position scroll_virtual_skip was computed for —
+                    # this is a fresh, real (non-mid-gap) position now.
+                    window.scroll_virtual_skip = 0
+                window.scroll_line = new_scroll
             else:
                 window.scroll_to_cursor(
                     text_width=self._text_width_for_window(window, rect.width, global_opts=global_opts)

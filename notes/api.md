@@ -554,8 +554,18 @@ editor.create_virtual_buffer(
 window.win_id -> int                   # stable numeric ID for this window
 window.buffer() -> Buffer              # method, not property
 window.cursor -> tuple[int, int]       # (line, col), 0-indexed
-window.set_cursor(line: int, col: int) -> None   # no add_to_jumplist param
-window.set_scroll_line(line: int) -> None
+window.set_cursor(line: int, col: int, *, follow_cursor: bool = True) -> None
+# no add_to_jumplist param. follow_cursor=False updates the position without
+# re-enabling the render controller's generic scrolloff-aware follow-cursor
+# logic for this window next frame — for callers that have already positioned
+# the window deliberately (see compare.py's on_cursor_moved / Window.scroll_virtual_skip
+# in notes/architecture.md) and don't want that logic second-guessing them.
+
+window.set_scroll_line(line: int, *, virtual_skip: int = 0) -> None
+# virtual_skip: see Window.scroll_virtual_skip in notes/architecture.md — lets
+# a window's viewport start partway into a virtual-line block instead of from
+# its top, for exact diff-pane alignment. 0 (default) is normal; only
+# compare.py's cross-pane alignment ever passes nonzero.
 window.scroll_to_cursor() -> None      # centers cursor; scroll_to(line) planned
 window.scroll_offset -> tuple[int, int]   # (scroll_line, scroll_col) of visible top-left
 window.visible_range() -> tuple[int, int]   # (first_line, last_line) inclusive

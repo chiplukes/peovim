@@ -44,12 +44,22 @@ class WindowAPI:
         """Return (line, col) cursor position (0-based)."""
         return self._window.cursor.line, self._window.cursor.col
 
-    def set_cursor(self, line: int, col: int) -> None:
-        """Move cursor to (line, col)."""
+    def set_cursor(self, line: int, col: int, *, follow_cursor: bool = True) -> None:
+        """Move cursor to (line, col).
+
+        follow_cursor: whether the render controller's generic scrolloff-aware
+        follow-cursor logic should run for this window on the next frame
+        (default True, matching plain cursor movement). Pass False when the
+        caller has already positioned the window's scroll deliberately and
+        the cursor value is just being kept roughly in sync — e.g. compare.py
+        tracking a real anchor line while its viewport shows virtual padding
+        (Window.scroll_virtual_skip > 0); that generic logic has no notion of
+        compare.py's alignment and would fight it. See on_cursor_moved.
+        """
         from peovim.modal.engine import Mode
 
         self._window.cursor.move_to(line, col)
-        self._window.follow_cursor = True
+        self._window.follow_cursor = follow_cursor
         normal_mode = True
         if self._engine is not None:
             normal_mode = self._engine.mode not in {Mode.INSERT, Mode.REPLACE}
@@ -63,9 +73,17 @@ class WindowAPI:
         if self._engine is not None and getattr(self._engine, "_document", None) is self._window.document:
             self._engine.set_scroll(self._window.scroll_line)
 
-    def set_scroll_line(self, line: int) -> None:
-        """Set the first visible line for the window."""
+    def set_scroll_line(self, line: int, *, virtual_skip: int = 0) -> None:
+        """Set the first visible line for the window.
+
+        virtual_skip: 0 (default) renders `line`'s own content normally. N >= 1
+        skips `line`'s own content entirely and starts painting at row N - 1 of
+        the virtual-line block anchored right after it — see
+        `Window.scroll_virtual_skip`. Only compare.py's cross-pane alignment
+        ever passes a nonzero value; every other caller is unaffected.
+        """
         self._window.scroll_line = max(0, line)
+        self._window.scroll_virtual_skip = max(0, virtual_skip)
         self._window.follow_cursor = False
         if self._engine is not None and getattr(self._engine, "_document", None) is self._window.document:
             self._engine.set_scroll(self._window.scroll_line)

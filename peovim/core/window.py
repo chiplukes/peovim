@@ -31,6 +31,19 @@ class Window:  # cm:8f2d5b
         self.cursor: Cursor = Cursor()
         self.scroll_line: int = 0  # first visible line
         self.scroll_col: int = 0  # first visible column (byte offset)
+        # How far *into* the virtual-line block anchored right after scroll_line
+        # to start painting, instead of from scroll_line's own content.
+        # scroll_line is always a real buffer line (there's no addressable
+        # "line" inside a virtual-only gap to point scroll_line itself at);
+        # this is the extra sub-line offset that makes exact mid-gap alignment
+        # possible for the diff view. 0 means disabled (render scroll_line's
+        # own content normally, the default for every ordinary window); N >= 1
+        # means "start at the block's row N-1" (skip scroll_line's own content
+        # row entirely, plus N-1 rows of the block) — offset by one so 0 can
+        # mean "disabled" and still let the block's very first row (N=1) be
+        # addressable. Only compare.py's cross-pane alignment ever sets this
+        # nonzero. See notes/architecture.md.
+        self.scroll_virtual_skip: int = 0
         self.follow_cursor: bool = True
         self.width: int = width
         self.height: int = height
@@ -113,6 +126,7 @@ class Window:  # cm:8f2d5b
             height=self.height,
             options=opts,
             closed_folds=tuple(self.folds.closed_folds()),
+            scroll_virtual_skip=self.scroll_virtual_skip,
         )
 
     def __repr__(self) -> str:

@@ -63,6 +63,19 @@ class TestSetup:
         assert "buffer_saved" in events
         assert "buffer_changed" in events
 
+    def test_subscribes_to_diff_head_path_event(self):
+        """explorer.py's diff_against_head() (an explicit-path variant, since
+        "the current file" there is whatever's highlighted in the tree, not
+        the active buffer) emits this event; mirrors compare.py's
+        compare_select_slot_path.
+        """
+        from peovim.plugins.gitsigns import setup
+
+        api, _ = _make_api()
+        setup(api)
+        events = [c.args[0] for c in api.events.on.call_args_list]
+        assert "git_diff_head_path" in events
+
     def test_registers_commands(self):
         from peovim.plugins.gitsigns import setup
 
@@ -610,6 +623,30 @@ class TestDiffHead:
 
         assert _cmd_diff_head(api, "") is False
         api.events.emit.assert_not_called()
+
+    def test_git_diff_head_path_event_diffs_the_given_path(self, tmp_path):
+        """End-to-end: setup()'s git_diff_head_path handler (what
+        explorer.py's diff_against_head() emits) must diff the *given* path,
+        not the active buffer — the whole point of the explicit-path variant.
+        """
+        from peovim.plugins.gitsigns import setup
+
+        repo = tmp_path / "repo"
+        target = repo / "src" / "other.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("print('new')\n", encoding="utf-8")
+
+        api, buf = _make_api(buf_path=repo / "README.md")
+        buf.path = repo / "README.md"
+        api.git.root.return_value = repo
+        api.git.show_file_text.return_value = "print('old')\n"
+        setup(api)
+
+        handlers = {c.args[0]: c.args[1] for c in api.events.on.call_args_list}
+        handlers["git_diff_head_path"](path=str(target))
+
+        kwargs = api.events.emit.call_args.kwargs
+        assert kwargs["right"] == str(target.resolve())
 
 
 class TestStatusSidebar:

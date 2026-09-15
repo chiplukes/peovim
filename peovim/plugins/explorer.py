@@ -389,6 +389,19 @@ class _ExplorerController:  # cm:1f4c6a
         if not self._api.keymap.invoke_plug("DiffSelected"):
             self._api.ui.notify("Diff viewer not available (add peovim.plugins.compare to init.py)", level="info")
 
+    def diff_against_head(self) -> None:
+        """Diff the selected file against HEAD (see peovim.plugins.gitsigns)."""
+        if self._api.events.handler_count("git_diff_head_path") == 0:
+            self._api.ui.notify("Git diff not available (add peovim.plugins.gitsigns to init.py)", level="info")
+            return
+        path = self._selected_path()
+        if path is None:
+            return
+        if path.is_dir():
+            _set_status(self._api, "Diff vs HEAD requires a file, not a directory")
+            return
+        self._api.events.emit("git_diff_head_path", path=str(path))
+
 
 def setup(api: EditorAPI) -> None:
     """Register explorer keybindings and commands."""
@@ -409,9 +422,13 @@ def setup(api: EditorAPI) -> None:
     api.keymap.define_plug("ExplorerDiffMark1", lambda: _controller.diff_mark(1), desc="Explorer: mark diff slot 1")
     api.keymap.define_plug("ExplorerDiffMark2", lambda: _controller.diff_mark(2), desc="Explorer: mark diff slot 2")
     api.keymap.define_plug("ExplorerDiffLaunch", _controller.diff_launch_selected, desc="Explorer: launch diff")
+    api.keymap.define_plug(
+        "ExplorerDiffHead", _controller.diff_against_head, desc="Explorer: diff selected file vs HEAD"
+    )
     api.keymap.nmap("<leader>c1", "<Plug>ExplorerDiffMark1", desc="Mark diff slot 1", scope="explorer")
     api.keymap.nmap("<leader>c2", "<Plug>ExplorerDiffMark2", desc="Mark diff slot 2", scope="explorer")
     api.keymap.nmap("<leader>cc", "<Plug>ExplorerDiffLaunch", desc="Launch diff", scope="explorer")
+    api.keymap.nmap("<leader>dw", "<Plug>ExplorerDiffHead", desc="Diff selected file vs HEAD", scope="explorer")
 
     # File operations — leader group active only while the explorer panel is focused.
     api.keymap.ngroup("<leader>f", "Explorer")

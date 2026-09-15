@@ -165,16 +165,44 @@ def render_window(
     screen_row = 0
     doc_line = snapshot.scroll_line
 
-    # Virtual lines anchored before buffer line 0 (after_line == -1).
-    # Only visible when the viewport starts at line 0.
-    if doc_line == 0 and vlines_by_anchor.get(-1):
-        for _vl in vlines_by_anchor[-1]:
-            for _ in range(_vl.count):
+    virtual_skip = snapshot.scroll_virtual_skip
+    if virtual_skip > 0 and doc_line < line_count:
+        # scroll_line itself always points at a real line — there's no
+        # addressable line *inside* a virtual-only gap for it to point at —
+        # so a nonzero skip means "start partway into the virtual block
+        # anchored right after scroll_line" (see Window.scroll_virtual_skip).
+        # Skip scroll_line's own real-content row entirely (it's the anchor
+        # we've deliberately scrolled past) and consume `virtual_skip - 1`
+        # rows of that block before painting begins (skip=1 means "start
+        # exactly at the block's first row" — 0 is reserved for "disabled,
+        # render scroll_line's own content normally", so counting is offset
+        # by one), then resume the normal loop from the next real line.
+        remaining_skip = virtual_skip - 1
+        for _vl in vlines_by_anchor.get(doc_line, ()):
+            group_count = _vl.count
+            if remaining_skip >= group_count:
+                remaining_skip -= group_count
+                continue
+            paint_count = group_count - remaining_skip
+            remaining_skip = 0
+            _vl_bg = _vl.style.bg if _vl.style.bg is not None else base_bg
+            for _ in range(paint_count):
                 if screen_row >= rect.height:
                     break
-                _vl_bg = _vl.style.bg if _vl.style.bg is not None else base_bg
                 _grid.fill(screen_row, 0, rect.width, bg=_vl_bg)
                 screen_row += 1
+        doc_line += 1
+    else:
+        # Virtual lines anchored before buffer line 0 (after_line == -1).
+        # Only visible when the viewport starts at line 0.
+        if doc_line == 0 and vlines_by_anchor.get(-1):
+            for _vl in vlines_by_anchor[-1]:
+                for _ in range(_vl.count):
+                    if screen_row >= rect.height:
+                        break
+                    _vl_bg = _vl.style.bg if _vl.style.bg is not None else base_bg
+                    _grid.fill(screen_row, 0, rect.width, bg=_vl_bg)
+                    screen_row += 1
 
     while screen_row < rect.height:
         if doc_line >= line_count:

@@ -102,9 +102,12 @@ class TerminalCursorController:
         # painted cursor cell this skips is a separate, already-fixed code path) on
         # the wrong screen row once any fall between scroll_line and cursor.line.
         if spans:
-            line_offset = buffer_line_to_visual_row(active_window.cursor.line, spans) - buffer_line_to_visual_row(
-                active_window.scroll_line, spans
-            )
+            scroll_visual = buffer_line_to_visual_row(active_window.scroll_line, spans)
+            virtual_skip = getattr(active_window, "scroll_virtual_skip", 0)
+            # virtual_skip already counts skipping scroll_line's own row — see
+            # Window.scroll_virtual_skip / window_render_controller.py.
+            viewport_top_visual = scroll_visual + virtual_skip if virtual_skip > 0 else scroll_visual
+            line_offset = buffer_line_to_visual_row(active_window.cursor.line, spans) - viewport_top_visual
         else:
             line_offset = active_window.cursor.line - active_window.scroll_line
         if not (0 <= line_offset < active_rect.height):

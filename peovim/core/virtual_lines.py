@@ -77,12 +77,25 @@ def scroll_line_for_cursor(
     height: int,
     scrolloff: int,
     spans: list[tuple[int, int]],
+    virtual_skip: int = 0,
 ) -> int:
     """Virtual-line-aware equivalent of `Window.scroll_to_cursor()`'s vertical logic.
 
     Returns the buffer-line scroll_line that keeps `cursor_line` visible with
     `scrolloff` rows of margin, accounting for `spans` (virtual-line padding).
     With no spans this reduces to the same values scroll_to_cursor() computes.
+
+    `virtual_skip` is `Window.scroll_virtual_skip` — when the viewport
+    deliberately starts partway into a virtual span (compare.py's exact
+    cross-pane alignment), the true top-of-viewport visual row is `scroll_line`'s
+    own visual row + `virtual_skip` (already counts scroll_line's own
+    now-skipped content row — see Window.scroll_virtual_skip), not
+    `scroll_line`'s own row — using the latter for the stability check would
+    treat a legitimately-stable mid-gap position as needing correction on every
+    frame. When this function decides the position IS stable, it returns
+    `scroll_line` unchanged (not a recomputed value that merely equals it) so
+    the caller can tell "still exactly where compare.py put it, virtual_skip is
+    still valid" apart from "landed here anyway, virtual_skip must reset to 0".
     """
     if not spans:
         so = max(0, scrolloff)
@@ -94,13 +107,14 @@ def scroll_line_for_cursor(
 
     target_visual = buffer_line_to_visual_row(cursor_line, spans)
     current_visual = buffer_line_to_visual_row(scroll_line, spans)
+    viewport_top_visual = current_visual + virtual_skip if virtual_skip > 0 else current_visual
     so = max(0, scrolloff)
-    if target_visual - so < current_visual:
+    if target_visual - so < viewport_top_visual:
         new_visual = target_visual - so
-    elif target_visual + so >= current_visual + height:
+    elif target_visual + so >= viewport_top_visual + height:
         new_visual = target_visual + so - height + 1
     else:
-        new_visual = current_visual
+        return scroll_line
     result = visual_row_to_buffer_line(max(0, new_visual), spans)
 
     # Even snapping forward (see visual_row_to_buffer_line), a span wider than the

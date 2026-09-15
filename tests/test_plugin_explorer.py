@@ -682,6 +682,51 @@ class TestExplorerDiffIntegration:
         assert len(notifications) == 1
         assert "not available" in notifications[0]
 
+    def test_diff_against_head_emits_event_for_selected_file(self, tmp_path):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        target = tmp_path / "left.py"
+        target.write_text("hello\n", encoding="utf-8")
+        received: list[dict] = []
+        # A handler must exist for diff_against_head to proceed (mirrors gitsigns.py being loaded).
+        api.events.on("git_diff_head_path", lambda **kw: received.append(kw))
+        node = TreeNode(label="left.py", value=str(target), children_fn=None)
+        controller = _controller_with_selection(api, node)
+
+        controller.diff_against_head()
+
+        assert received == [{"path": str(target)}]
+
+    def test_diff_against_head_refuses_a_directory(self, tmp_path):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        received: list[dict] = []
+        api.events.on("git_diff_head_path", lambda **kw: received.append(kw))
+        node = TreeNode(label="subdir", value=str(tmp_path), children_fn=lambda: [])
+        controller = _controller_with_selection(api, node)
+
+        controller.diff_against_head()
+
+        assert received == []
+
+    def test_diff_against_head_notifies_when_gitsigns_plugin_not_loaded(self, tmp_path, monkeypatch):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        notifications = []
+        monkeypatch.setattr(api.ui, "notify", lambda message, **kw: notifications.append(message))
+        target = tmp_path / "left.py"
+        target.write_text("hello\n", encoding="utf-8")
+        node = TreeNode(label="left.py", value=str(target), children_fn=None)
+        controller = _controller_with_selection(api, node)
+
+        controller.diff_against_head()  # no git_diff_head_path handler registered
+
+        assert len(notifications) == 1
+        assert "not available" in notifications[0]
+
     def test_explorer_and_compare_scoped_keys_coexist_when_registered_scope_first(self, tmp_path):
         # Regression: registering a scoped binding for a key that already has a
         # global default for that key silently deletes the global one — the safe

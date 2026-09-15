@@ -205,6 +205,10 @@ def setup(api: EditorAPI) -> None:  # cm:7e8b5d
     api.keymap.define_plug("GitsignsPrevHunk", lambda: _prev_hunk(api), desc="Git: previous hunk")
     api.keymap.define_plug("GitsignsStatusPanel", lambda: _toggle_status_panel(api), desc="Git: panel")
     api.keymap.define_plug("GitsignsDiffHead", lambda: _cmd_diff_head(api, ""), desc="Git: diff working file vs HEAD")
+    # Explicit-path variant for callers like explorer.py, where "the current file"
+    # is whatever's highlighted in the tree, not the active editor buffer — mirrors
+    # compare.py's compare_select_slot_path event.
+    api.events.on("git_diff_head_path", lambda **kwargs: _cmd_diff_head(api, str(kwargs.get("path", ""))))
     api.keymap.nmap("]c", "<Plug>GitsignsNextHunk", desc="Git: next hunk")
     api.keymap.nmap("[c", "<Plug>GitsignsPrevHunk", desc="Git: previous hunk")
     api.keymap.nmap("<leader>gs", "<Plug>GitsignsStatusPanel", desc="Git: panel")

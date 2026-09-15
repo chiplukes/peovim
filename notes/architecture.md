@@ -958,33 +958,108 @@ step further: predicting isn't enough if the prediction formula itself can diver
 from the oracle; query the oracle directly when the two directions aren't provably
 equivalent.
 
-**`compare.py`'s `_visual_row_to_buffer_line`** (the module-level, `blocks`-based
-variant used by `_map_scroll_line` for cross-pane alignment — distinct from
-`peovim.core.virtual_lines`'s decoration-based one) had a genuine mapping bug, not
-a fight between two code paths: for a pure insert/delete block (no real content at
-all on one side — the whole block is virtual padding there, e.g. 50 lines that
-exist only in the left file), it always anchored to the buffer line *before* the
-gap, regardless of how far into (or past) the gap the target visual row actually
-was. Reported symptom: scrolling the left pane to near the *end* of a large
-delete-only block (~1 row from its end) still mapped the right pane's scroll to
-*before the gap's start* — right rendered the gap's entire virtual padding from the
-top, filling most of its screen with padding while showing almost none of the real
-content that should have been in view, and put a landmark line (`if __name__ ==
-"__main__":`) near the top of one pane and near the bottom of the other. Confirmed
-directly: mapping left's scroll to right returned a buffer line whose own visual
-position was 50 rows off from left's — the two panes' viewport tops genuinely
-weren't at the same visual row.
+**`compare.py`'s cross-pane scroll mapping** (`_map_scroll_line`/`_visual_row_to_buffer_line`,
+the module-level `blocks`-based functions — distinct from `peovim.core.virtual_lines`'s
+decoration-based ones) had a genuine mapping bug, not a fight between two code paths:
+for a pure insert/delete block (no real content at all on one side — the whole block
+is virtual padding there, e.g. 50 lines that exist only in the left file), the mapping
+always anchored to the buffer line *before* the gap, regardless of how far into (or
+past) the gap the target visual row actually was. Reported symptom: scrolling the left
+pane to near the *end* of a large delete-only block (~1 row from its end) still mapped
+the right pane's scroll to *before the gap's start* — right rendered the gap's entire
+virtual padding from the top, filling most of its screen with padding while showing
+almost none of the real content that should have been in view, and put a landmark
+line (`if __name__ == "__main__":`) near the top of one pane and near the bottom of
+the other. Confirmed directly: mapping left's scroll to right returned a buffer line
+whose own visual position was 50 rows off from left's — the two panes' viewport tops
+genuinely weren't at the same visual row.
 
-There's no way to fully solve this — `scroll_line` is a single buffer-line index,
-and a virtual gap has no real line "20 rows into it" to point at, so *some*
-discrepancy inside the gap itself is unavoidable. Fixed by snapping to whichever
-edge of the gap the target visual row is actually closer to (`buf_start - 1` if
-in the first half, `buf_end` — skipping straight past the gap — if in the second),
-instead of always snapping to the start. Bounds the worst-case discrepancy to
-roughly half the gap's width (only while genuinely *inside* the gap) instead of
-its full width, and makes the near-exact case — a viewport that's mostly or
-entirely past the gap, the common and most visible case — actually near-exact
-(1-row discrepancy in the reported scenario, down from 50).
+A first pass bounded this (snap to whichever edge of the gap is closer, instead of
+always the start) but couldn't eliminate it while genuinely scrolled *inside* a large
+gap — `scroll_line` is a single real-buffer-line index, and there's no real line "20
+rows into" a stretch of pure padding for it to point at. Dedicated diff tools
+(TortoiseMerge, etc.) don't have this limitation because their scroll position lives
+in a unified visual-row space where padding rows are first-class scrollable units, not
+real-line pointers.
+
+### `Window.scroll_virtual_skip` — exact mid-gap scroll positions
+
+Solved properly by adding a second piece of per-window scroll state,
+`Window.scroll_virtual_skip: int` (also on `WindowSnapshot`, threaded through
+`Window.snapshot()`; `WindowAPI.set_scroll_line(line, virtual_skip=N)` sets it).
+`scroll_line` still always points at a real buffer line — specifically, for a gap,
+the last real line *before* it. `scroll_virtual_skip` says how far past that anchor
+to actually start painting:
+- `0` (the default, on every ordinary window): disabled — render `scroll_line`'s own
+  content normally, exactly as before this feature existed.
+- `N >= 1`: skip `scroll_line`'s own content row entirely, plus `N - 1` rows of the
+  virtual block anchored right after it, landing on that block's row `N - 1`. (Offset
+  by one so `0` can unambiguously mean "disabled" while the block's very first row —
+  which needs skip value `1`, not `0` — is still reachable. Getting this off-by-one
+  wrong was caught by a repro that scrolled to a gap's *first* row exactly, where a
+  naive `N == rows-into-gap` reading would fall through to "disabled" and show
+  `scroll_line`'s own real content first instead of the gap.)
+
+`peovim/ui/_window_renderer_pure.py::render_window`'s main loop checks this before its
+normal per-line loop: if `scroll_virtual_skip > 0`, it consumes that many rows from
+`scroll_line`'s trailing virtual block (walking across multiple `VirtualLine` decoration
+groups at the same anchor if needed) before any painting happens, then resumes the
+normal loop from `scroll_line + 1`. Fully gated behind `scroll_virtual_skip > 0`, so
+every other window (the overwhelming majority) is byte-for-byte unaffected.
+
+`compare.py`'s `_visual_row_to_scroll_position`/`_map_scroll_position` compute this
+exactly (no more edge-snapping) for cross-pane alignment; `on_cursor_moved` calls
+`_map_scroll_position` and passes both `other_scroll` and `other_skip` to
+`other_win.set_scroll_line(...)`.
+
+**Consistency was the hard part**, not the rendering — three separate places had to
+agree on where the viewport top actually is once `scroll_virtual_skip` is nonzero, or
+they'd fight each other exactly like the two bugs earlier in this section:
+- `peovim.core.virtual_lines.scroll_line_for_cursor` (the render controller's generic
+  follow-cursor stability check) gained a `virtual_skip` parameter, used only to bias
+  its "is this position stable" comparison — `viewport_top_visual = scroll_line's own
+  visual row + virtual_skip` instead of just its own row. When it decides the position
+  *is* stable, it returns `scroll_line` **unchanged** (not merely an equal recomputed
+  value) so the caller (`window_render_controller.py`) can tell "still exactly where
+  compare.py put it, skip is still valid" apart from "landed here anyway, skip must
+  reset to 0" — the max-scroll clamp and this follow-cursor branch both reset
+  `scroll_virtual_skip` to 0 whenever they actually change `scroll_line` to something
+  else, since neither of them knows how to preserve a meaningful mid-gap offset for a
+  position they picked themselves.
+- `TerminalCursorController.resolve_terminal_cursor_state()` (see below) needed the
+  same `+ virtual_skip` bias in its own screen-row computation.
+- **The cursor itself.** `on_cursor_moved`'s clamp for the non-active pane's cursor —
+  which must always be a real line, never mid-gap — used to independently pick
+  whichever edge of the gap was nearer to a margin-based target. That decision doesn't
+  track the *scroll* mapping's own (now exact) choice, so as the viewport scrolls
+  smoothly through a gap, the cursor can jump discontinuously days ahead of or behind
+  it — landing on a real line far outside the currently-rendered range, which makes
+  `scroll_line_for_cursor` conclude the position is unstable and yank the scroll to
+  match the cursor instead, producing a one-frame but drastic (tens of rows) spike
+  right at the gap's midpoint. Found via the real repro file, not synthetic tests.
+  Fixed by not clamping the cursor via a separate heuristic at all while
+  `other_skip > 0`: keep it tracking `other_scroll` (the gap's anchor line, so it isn't
+  stale whenever the gap is eventually exited) via
+  `other_win.set_cursor(other_scroll, col, follow_cursor=False)` — the new
+  `follow_cursor` kwarg on `WindowAPI.set_cursor()` updates the cursor position without
+  flipping `Window.follow_cursor` back to `True`, so the render controller's generic
+  follow-cursor logic (the thing that was fighting the placement) simply never runs
+  for that window while it's genuinely mid-gap.
+
+Net result, verified against the real file that reported this (a 50-line delete-only
+block): exact alignment at every row while scrolling through the gap in either
+direction (confirmed via a deterministic test sweeping `_map_scroll_position` over
+every visual row of a large gap, `tests/test_compare_scroll_alignment.py`), and no
+more transient spikes at the gap's boundaries. What remains is a much smaller,
+separate, pre-existing imprecision in predicting the *active* pane's own next scroll
+position during continuous `j`/`k`/wheel movement — bounded to roughly a screen's
+worth of rows at scattered points unrelated to any gap, present before this session's
+work and not something `scroll_virtual_skip` addresses (it only concerns the
+already-scrolled *other* pane's mapping). Not yet root-caused; flagged here rather
+than chased further, since each fix in this area has tended to surface exactly one
+more exact-boundary edge case and this one doesn't reproduce the originally-reported
+symptom (persistent, gap-width misalignment) — it's small, scattered, and
+self-correcting within a frame or two.
 
 Worth noting for anyone chasing a similar scrolloff issue elsewhere: `Window`
 (`peovim/core/window.py`) is deliberately decoupled from `OptionsStore` — it only

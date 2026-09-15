@@ -22,9 +22,31 @@ try:
     from peovim._native.window_renderer import render_window as _native_render_window  # type: ignore[import]
 
     def render_window(*args, grid: CellGrid | None = None, **kwargs):  # type: ignore[misc]
-        """Prefer native rendering, but fall back to pure rendering for unsupported features."""
+        """Prefer native rendering, but fall back to pure rendering for unsupported features.
+
+        The native (Cython) renderer has no `VirtualLine` support at all — it
+        doesn't index or paint that decoration type, so a window with
+        virtual-line padding (compare.py's diff-alignment spacers, and
+        `Window.scroll_virtual_skip`'s mid-gap rendering) would render as if
+        the padding didn't exist. Must fall back to the pure renderer
+        whenever any are present, not just when `scrollbar` is set — that
+        was the only existing trigger, so virtual lines only ever rendered
+        correctly for windows/users that happened to also have scrollbar
+        enabled globally, purely by coincidence.
+        """
         snapshot = args[0] if args else kwargs.get("snapshot")
-        if getattr(snapshot, "options", {}).get("scrollbar"):
+        needs_pure = bool(getattr(snapshot, "options", {}).get("scrollbar"))
+        if not needs_pure:
+            decorations = args[3] if len(args) > 3 else kwargs.get("decorations")
+            extra_decorations = args[6] if len(args) > 6 else kwargs.get("extra_decorations")
+            if decorations or extra_decorations:
+                from peovim.ui.decorations import VirtualLine  # noqa: PLC0415
+
+                for _decs in (decorations, extra_decorations):
+                    if _decs and any(isinstance(_d, VirtualLine) for _d in _decs):
+                        needs_pure = True
+                        break
+        if needs_pure:
             return _pure_render_window(*args, grid=grid, **kwargs)  # type: ignore[misc]
         return _native_render_window(*args, **kwargs)
 
