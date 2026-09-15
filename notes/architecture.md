@@ -1201,6 +1201,17 @@ SplitNode = HSplitNode | VSplitNode | WindowLeaf
 **Resize**: update `ratio` on the parent node.
 **Focus `h/j/k/l`**: traverse the tree to find the geometrically adjacent leaf.
 
+**Split at the tab edge, not the active leaf**: `TabPage.split_vertical()`/
+`split_horizontal()` always split whichever leaf is active — right for plain
+`:vsplit`/`:split`. `split_vertical_at_edge()`/`split_horizontal_at_edge()` instead
+wrap the *whole* `root` in a new split node (`VSplitNode(root, new_leaf)`), so the
+new window always lands on the far right/bottom of the tab regardless of which leaf
+was active. Exposed via `SplitWindow.at_edge` / `EditorAPI.split_window(...,
+at_edge=True)`. Used by `EditorAPI._split_for_compare_jump_if_needed` (and
+`LspUiAdapter.goto_location`'s copy of the same guard) so a cross-file jump out of
+either half of a diff/compare split doesn't wedge the new window between the two
+panes.
+
 The layout pass (`compute_layout`) is a pure function over this tree — no
 mutable state, trivially testable without a terminal.
 

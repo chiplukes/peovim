@@ -477,6 +477,7 @@ class TestEditorAPI:
 
         api.open_buffer(left)
         api.commands.execute("vsplit")
+        api.activate_window(api.active_window())  # vsplit (an ex-command) doesn't sync dispatcher.window itself
         api.open_buffer(right)
         left_win = next(w for w in api._workspace.active_tab.all_windows() if w.document.path == left.resolve())
         right_win = next(w for w in api._workspace.active_tab.all_windows() if w.document.path == right.resolve())
@@ -500,6 +501,7 @@ class TestEditorAPI:
 
         api.open_buffer(left)
         api.commands.execute("vsplit")
+        api.activate_window(api.active_window())  # vsplit (an ex-command) doesn't sync dispatcher.window itself
         api.open_buffer(right)  # right pane ends up active here
         left_win = next(w for w in api._workspace.active_tab.all_windows() if w.document.path == left.resolve())
         right_win = next(w for w in api._workspace.active_tab.all_windows() if w.document.path == right.resolve())

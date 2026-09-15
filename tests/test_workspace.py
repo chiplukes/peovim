@@ -62,6 +62,32 @@ class TestTabPage:
         assert isinstance(page.root, VSplitNode)
         assert page.active_window is new_win
 
+    def test_split_vertical_at_edge_appends_after_the_whole_layout_not_the_active_leaf(self):
+        # split_vertical() always splits the active leaf — right for plain :vsplit,
+        # but wrong for a caller (e.g. gd out of the left pane of a diff/compare
+        # view) that wants its new window to sit alongside an existing multi-window
+        # layout without separating two panes that belong together.
+        win_a = make_window("a")
+        page = TabPage(root=WindowLeaf(win_a))
+        win_b = page.split_vertical()  # [a, b], b active
+        page.focus_window(win_a)  # focus the LEFT pane, as if gd fired there
+
+        new_win = page.split_vertical_at_edge()
+
+        assert page.active_window is new_win
+        assert page.all_windows() == [win_a, win_b, new_win]
+
+    def test_split_horizontal_at_edge_appends_after_the_whole_layout_not_the_active_leaf(self):
+        win_a = make_window("a")
+        page = TabPage(root=WindowLeaf(win_a))
+        win_b = page.split_horizontal()
+        page.focus_window(win_a)
+
+        new_win = page.split_horizontal_at_edge()
+
+        assert page.active_window is new_win
+        assert page.all_windows() == [win_a, win_b, new_win]
+
     def test_all_windows_after_splits(self):
         win = make_window("a")
         page = TabPage(root=WindowLeaf(win))
@@ -343,6 +369,18 @@ class TestWindowDispatcher:
         disp, ws, _win = self._make_dispatcher()
         disp.dispatch([SplitWindow("v")])
         assert len(ws.active_tab.all_windows()) == 2
+
+    def test_split_vertical_action_at_edge(self):
+        from peovim.modal.actions import SplitWindow
+
+        disp, ws, win_orig = self._make_dispatcher()
+        disp.dispatch([SplitWindow("v")])  # [orig, mid]
+        win_mid = ws.active_window
+        ws.active_tab.focus_window(win_orig)
+
+        disp.dispatch([SplitWindow("v", at_edge=True)])
+
+        assert ws.active_tab.all_windows() == [win_orig, win_mid, ws.active_window]
 
     def test_close_window_action(self):
         from peovim.modal.actions import CloseWindow, SplitWindow

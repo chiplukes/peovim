@@ -250,7 +250,10 @@ editor.bottom_panel_rect() -> Rect | None   # bottom-panel screen rect, or None 
 editor.set_register(name: str, text: str, kind: str = "char") -> None
 editor.get_register(name: str) -> tuple[str, str]
 editor.paste_register(name: str = '"', *, before: bool = False) -> None
-editor.split_window(direction: str = "v", path: str | Path | None = None) -> None
+editor.split_window(direction: str = "v", path: str | Path | None = None, *, at_edge: bool = False) -> None
+# at_edge=True adds the new window at the far right/bottom of the whole tab instead
+# of splitting whichever window is currently active — see notes/architecture.md's
+# "Split at the tab edge, not the active leaf".
 editor.close_window() -> None
 editor.only_window() -> None
 editor.equalize_windows() -> None
