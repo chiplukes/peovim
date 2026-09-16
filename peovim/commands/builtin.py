@@ -15,6 +15,7 @@ from peovim.commands.parser import ParsedCommand
 from peovim.commands.registry import CommandRegistry
 from peovim.config.loader import preferred_user_config_path
 from peovim.core.style import Style
+from peovim.core.window import effective_scroll_options
 from peovim.modal.actions import (
     CloseWindow,
     DeleteRange,
@@ -499,7 +500,7 @@ def _cmd_edit(cmd: ParsedCommand, ctx: Any) -> None:
     target_line = min(original_line, max_line)
     target_col = min(original_col, max(0, len(doc.get_line(target_line)) - 1))
     win.cursor.move_to(target_line, target_col)
-    win.scroll_to_cursor()
+    win.scroll_to_cursor(**effective_scroll_options(getattr(ctx, "editor_state", None)))
     if doc.had_mixed_line_endings:
         _set_message(
             ctx,
@@ -1061,7 +1062,7 @@ def _cmd_bdelete(cmd: ParsedCommand, ctx: Any) -> None:
             # Restore cursor to where it was before the jump
             if win is not None:
                 win.cursor.move_to(alt_cursor[0], alt_cursor[1])
-                win.scroll_to_cursor()
+                win.scroll_to_cursor(**effective_scroll_options(es))
         if es is not None:
             es.alt_path = None
             es.alt_cursor = (0, 0)

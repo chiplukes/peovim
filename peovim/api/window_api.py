@@ -68,8 +68,11 @@ class WindowAPI:
             self._engine.set_cursor(self._window.cursor.line, self._window.cursor.col)
 
     def scroll_to_cursor(self) -> None:
-        """Adjust scroll so the cursor is visible."""
-        self._window.scroll_to_cursor()
+        """Adjust scroll so the cursor is visible, respecting global scrolloff/sidescrolloff."""
+        from peovim.core.window import effective_scroll_options
+
+        opts = effective_scroll_options(getattr(self._dispatcher, "_editor_state", None))
+        self._window.scroll_to_cursor(**opts)
         if self._engine is not None and getattr(self._engine, "_document", None) is self._window.document:
             self._engine.set_scroll(self._window.scroll_line)
 

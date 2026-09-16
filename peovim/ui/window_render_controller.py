@@ -161,8 +161,11 @@ class WindowRenderController:  # cm:9d6c3f
                     window.scroll_virtual_skip = 0
                 window.scroll_line = new_scroll
             else:
+                from peovim.core.window import effective_scroll_options
+
                 window.scroll_to_cursor(
-                    text_width=self._text_width_for_window(window, rect.width, global_opts=global_opts)
+                    text_width=self._text_width_for_window(window, rect.width, global_opts=global_opts),
+                    **effective_scroll_options(self._host._editor_state),
                 )
 
     def _virtual_line_spans(self, window: Any) -> list[tuple[int, int]]:

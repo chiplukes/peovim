@@ -86,6 +86,7 @@ class LspUiAdapter:
 
     def goto_location(self, loc: dict) -> None:
         from peovim.core.compare_jump import should_split_for_compare_jump
+        from peovim.core.window import effective_scroll_options
         from peovim.modal.actions import OpenBuffer, SplitWindow
 
         host = self._host
@@ -104,7 +105,7 @@ class LspUiAdapter:
         host._dispatcher.dispatch([OpenBuffer(path)])
         win = host._workspace.active_window
         win.cursor.move_to(line, col)
-        win.scroll_to_cursor(center=line > 0)
+        win.scroll_to_cursor(center=line > 0, **effective_scroll_options(host._editor_state))
         jumplist = getattr(host._dispatcher, "jumplist", None)
         if jumplist is not None:
             jumplist.push(max(0, line), max(0, col), str(target), win.scroll_line)

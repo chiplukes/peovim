@@ -31,8 +31,10 @@ def _move_to_jump_target(
     cur.clamp(doc._table)
     # Restore the saved viewport, then ensure cursor is actually visible
     # (scroll_to_cursor is a no-op if cursor already falls within the window).
+    from peovim.core.window import effective_scroll_options
+
     dispatcher.window.scroll_line = max(0, scroll_line)
-    dispatcher.window.scroll_to_cursor(center=True)
+    dispatcher.window.scroll_to_cursor(center=True, **effective_scroll_options(dispatcher._editor_state))
 
 
 def handle_navigation_action(dispatcher: ActionDispatcher, action: object, doc: Document, cur: Cursor) -> bool:

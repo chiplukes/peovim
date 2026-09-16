@@ -10,6 +10,8 @@ See notes/architecture.md for the Buffer/Window/Tab Model.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 from peovim.core.cursor import Cursor
 from peovim.core.document import Document
 from peovim.core.fold import FoldStore
@@ -54,7 +56,15 @@ class Window:  # cm:8f2d5b
     # Scroll helpers
     # ------------------------------------------------------------------
 
-    def scroll_to_cursor(self, text_width: int | None = None, *, center: bool = False) -> None:
+    def scroll_to_cursor(
+        self,
+        text_width: int | None = None,
+        *,
+        center: bool = False,
+        scrolloff: int | None = None,
+        sidescrolloff: int | None = None,
+        tabstop: int | None = None,
+    ) -> None:
         """Adjust scroll_line and scroll_col so cursor is visible, respecting scrolloff/sidescrolloff.
 
         text_width: visible text columns (window width minus gutter). When None,
@@ -63,11 +73,21 @@ class Window:  # cm:8f2d5b
 
         center: when True and the cursor is outside the current viewport, center the
         cursor in the window instead of just ensuring it is visible.
+
+        scrolloff/sidescrolloff/tabstop: effective (global-aware) option values
+        to use instead of `self.options` (a window-local *override* dict — see
+        its declaration in __init__ — that's never populated from the global
+        OptionsStore). Window has no OptionsStore reference by design, so it
+        can't resolve the global value itself; callers that have one (the
+        dispatcher, WindowAPI, plugins) should pass the effective value here.
+        None (the default) falls back to `self.options.get(..., 0)`, i.e.
+        today's behavior — only a window-local override applies, matching
+        every caller that predates this parameter and doesn't pass it.
         """
         self.follow_cursor = True
 
         # --- Vertical ---
-        so = int(self.options.get("scrolloff", 0))
+        so = int(scrolloff if scrolloff is not None else self.options.get("scrolloff", 0))
         target = self.cursor.line
         if center and (target < self.scroll_line or target >= self.scroll_line + self.height):
             self.scroll_line = max(0, target - self.height // 2)
@@ -79,8 +99,8 @@ class Window:  # cm:8f2d5b
 
         # --- Horizontal ---
         # Use the provided text_width (excl. gutter), falling back to self.width.
-        sso = int(self.options.get("sidescrolloff", 0))
-        tabstop = int(self.options.get("tabstop", 4) or 4)
+        sso = int(sidescrolloff if sidescrolloff is not None else self.options.get("sidescrolloff", 0))
+        tabstop = int(tabstop if tabstop is not None else (self.options.get("tabstop", 4) or 4))
         tw = max(1, text_width if text_width is not None and text_width > 0 else self.width)
         try:
             line_text = self.document.get_line(self.cursor.line)
@@ -135,3 +155,42 @@ class Window:  # cm:8f2d5b
             f"scroll=({self.scroll_line},{self.scroll_col}), "
             f"size={self.width}x{self.height})"
         )
+
+
+class ScrollOptions(TypedDict, total=False):
+    """Return shape of `effective_scroll_options()` — a TypedDict (not a plain
+    `dict[str, int]`) so `**effective_scroll_options(...)` type-checks cleanly
+    against `scroll_to_cursor()`'s mixed int/bool keyword parameters (a plain
+    homogeneous dict makes mypy conservatively check every keyword parameter
+    against the dict's value type, including unrelated ones like `center: bool`).
+    """
+
+    scrolloff: int
+    sidescrolloff: int
+    tabstop: int
+
+
+def effective_scroll_options(editor_state: object | None) -> ScrollOptions:
+    """scrolloff/sidescrolloff/tabstop kwargs for `Window.scroll_to_cursor()`,
+    read from the real OptionsStore on `editor_state`.
+
+    `Window.options` is a window-local *override* dict that's never populated
+    from global settings (`options.set("scrolloff", N)` in init.py) — reading
+    it directly, as `scroll_to_cursor()` does when these aren't passed, silently
+    behaves as if scrolloff/sidescrolloff/tabstop were always 0 or default,
+    regardless of what's globally configured (see notes/architecture.md). No
+    code sets a *window-scoped* override for any of these today, so the plain
+    global lookup (no win_id) used here is the correct effective value in
+    every real case. Callers with an EditorState (the dispatcher, WindowAPI,
+    plugins) should pass `**effective_scroll_options(editor_state)` into
+    `scroll_to_cursor()` instead of letting it fall back to `Window.options`.
+    """
+    store = getattr(editor_state, "options", None)
+    if store is None:
+        return {}
+    result: ScrollOptions = {}
+    for name in ("scrolloff", "sidescrolloff", "tabstop"):
+        value = store.get(name)
+        if value is not None:
+            result[name] = int(value)  # type: ignore[literal-required]
+    return result

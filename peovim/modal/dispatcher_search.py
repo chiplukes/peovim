@@ -3,6 +3,7 @@ from __future__ import annotations
 import re as _re
 from typing import TYPE_CHECKING
 
+from peovim.core.window import effective_scroll_options
 from peovim.modal.actions import (
     ClearSearchHighlight,
     SearchNext,
@@ -39,7 +40,9 @@ def handle_search_action(dispatcher: ActionDispatcher, action: object, doc: Docu
                 )
                 if result:
                     cur.move_to(result[0], result[1])
-                    dispatcher.window.scroll_to_cursor(center=True)
+                    dispatcher.window.scroll_to_cursor(
+                        center=True, **effective_scroll_options(dispatcher._editor_state)
+                    )
         return True
 
     if isinstance(action, SearchNext):
@@ -63,7 +66,7 @@ def handle_search_action(dispatcher: ActionDispatcher, action: object, doc: Docu
                 else:
                     break
             if result:
-                dispatcher.window.scroll_to_cursor(center=True)
+                dispatcher.window.scroll_to_cursor(center=True, **effective_scroll_options(dispatcher._editor_state))
         return True
 
     if isinstance(action, SearchWordUnderCursor):
@@ -101,7 +104,9 @@ def handle_search_action(dispatcher: ActionDispatcher, action: object, doc: Docu
                     )
                 if result:
                     cur.move_to(result[0], result[1])
-                    dispatcher.window.scroll_to_cursor(center=True)
+                    dispatcher.window.scroll_to_cursor(
+                        center=True, **effective_scroll_options(dispatcher._editor_state)
+                    )
         return True
 
     if isinstance(action, ClearSearchHighlight):

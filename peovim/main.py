@@ -199,7 +199,7 @@ def main() -> None:  # cm:a3f1b2
     from peovim.core.jumplist import JumpList
     from peovim.core.marks import MarkStore
     from peovim.core.registers import RegisterStore
-    from peovim.core.window import Window
+    from peovim.core.window import Window, effective_scroll_options
     from peovim.core.workspace import Workspace
     from peovim.modal.dispatcher import ActionDispatcher
     from peovim.modal.engine import ModalEngine
@@ -226,6 +226,9 @@ def main() -> None:  # cm:a3f1b2
         window.cursor.line = line
         window.cursor.col = col
         window.cursor.clamp(doc._table)
+        # No EditorState/OptionsStore exists yet at this point in startup (config/
+        # init.py hasn't loaded), so there's no global scrolloff to apply regardless —
+        # unlike the buffer_opened handler below, which fires after config load.
         window.scroll_to_cursor()
     workspace = Workspace(window)
     registers = RegisterStore()
@@ -337,7 +340,7 @@ def main() -> None:  # cm:a3f1b2
                         win.cursor.line = line
                         win.cursor.col = col
                         win.cursor.clamp(win.document._table)
-                        win.scroll_to_cursor()
+                        win.scroll_to_cursor(**effective_scroll_options(editor_state))
                     return
 
     editor_state.event_bus.on("buffer_opened", _on_buffer_opened)

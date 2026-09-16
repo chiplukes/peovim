@@ -467,6 +467,7 @@ class EditorAPI:  # cm:6d5a2c
         (explorer, pickers, goto_location, alternate-file, panel "open file" actions, ...)
         in one place rather than requiring each to opt in individually.
         """
+        from peovim.core.window import effective_scroll_options
         from peovim.modal.actions import OpenBuffer
 
         target = pathlib.Path(path).resolve()
@@ -475,7 +476,7 @@ class EditorAPI:  # cm:6d5a2c
 
         win = self._workspace.active_window
         win.cursor.move_to(max(0, line), max(0, col))
-        win.scroll_to_cursor(center=line > 0)
+        win.scroll_to_cursor(center=line > 0, **effective_scroll_options(self._editor_state))
 
         if line > 0 or col > 0:
             jumplist = getattr(self._dispatcher, "jumplist", None)

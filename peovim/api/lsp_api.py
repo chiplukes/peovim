@@ -652,6 +652,7 @@ class LspAPI:
     # ------------------------------------------------------------------
 
     def _goto_diag(self, direction: int) -> None:
+        from peovim.core.window import effective_scroll_options
         from peovim.ui.decorations import Sign
 
         win = self._workspace.active_window
@@ -669,7 +670,7 @@ class LspAPI:
             candidates = [ln for ln in diag_lines if ln > cur_line]
             target = candidates[0] if candidates else diag_lines[0]
         win.cursor.move_to(target, 0)
-        win.scroll_to_cursor()
+        win.scroll_to_cursor(**effective_scroll_options(self._editor_state))
 
     def _jump_from_locations_request(
         self,

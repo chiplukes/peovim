@@ -1061,24 +1061,35 @@ more exact-boundary edge case and this one doesn't reproduce the originally-repo
 symptom (persistent, gap-width misalignment) — it's small, scattered, and
 self-correcting within a frame or two.
 
-Worth noting for anyone chasing a similar scrolloff issue elsewhere: `Window`
-(`peovim/core/window.py`) is deliberately decoupled from `OptionsStore` — it only
-has its own `self.options: dict` (window-local *overrides*, empty unless a plugin
-sets one explicitly), not the effective global value. `Window.scroll_to_cursor()`
-reads `self.options.get("scrolloff", 0)` directly, so **global `scrolloff` has no
-effect through that method** — every one of its many callers (LSP jumps, search,
+### Global `scrolloff`/`sidescrolloff`/`tabstop` now actually apply outside the diff view
+
+`Window` (`peovim/core/window.py`) is deliberately decoupled from `OptionsStore` —
+it only has its own `self.options: dict` (window-local *overrides*, empty unless a
+plugin sets one explicitly), not the effective global value. `Window.scroll_to_cursor()`
+used to read `self.options.get("scrolloff", 0)` directly, so **global `scrolloff` had
+no effect through that method** — every one of its ~15 callers (LSP jumps, search,
 markers, flash, outline, workspace_symbols, references_panel, `<C-o>`/`<C-i>`
-navigation, `sync_window_render_state`'s non-diff branch, …) effectively runs with
-scrolloff=0 no matter what `options.set("scrolloff", N)` says. The virtual-line-aware
-branch in `sync_window_render_state` avoids this because it explicitly merges
-`global_opts` before reading scrolloff, which is also why this diff-pane bug was
-straightforward to find (that's the one path where scrolloff genuinely does apply)
-but a plain, non-diff window's mouse-wheel/`<C-d>` scrolling won't exhibit the same
-"fights back" symptom today — scrolloff silently doesn't apply there at all, so
-there's nothing to fight. Threading the effective scrolloff into `scroll_to_cursor()`
-(and its ~15 call sites) is a separate, not-yet-done fix — flagged here rather than
-folded into this session's diff-pane work since it's a materially larger change
-with its own scope.
+navigation, `sync_window_render_state`'s non-diff branch, `:RecoverFile`/`:bd`
+alternate-file restore, shada cursor restore, …) effectively ran with scrolloff=0 no
+matter what `options.set("scrolloff", N)` said. The diff view's own virtual-line-aware
+`sync_window_render_state` branch was the sole exception — it was written to
+explicitly merge `global_opts` before reading scrolloff — which is also how this gap
+was found (comparing that branch's correct behavior against the plain-window branch's
+silent no-op).
+
+Fixed the same way `text_width` already worked: `Window.scroll_to_cursor()` gained
+optional `scrolloff`/`sidescrolloff`/`tabstop` keyword parameters. When omitted
+(`None`, the default), it falls back to the old `self.options`-only behavior — so any
+caller that doesn't yet pass them (or genuinely has no `OptionsStore` to read, e.g.
+`main.py`'s very first cursor position before config has loaded) is unaffected. A new
+`peovim.core.window.effective_scroll_options(editor_state) -> ScrollOptions` (a
+`TypedDict`, not a plain `dict[str, int]` — needed so `**effective_scroll_options(...)`
+type-checks cleanly against `scroll_to_cursor()`'s mixed int/bool keyword params)
+resolves the real value from `editor_state.options.get(name)` (global-only lookup — no
+code sets a *window-scoped* override for any of these today, so that's the correct
+effective value everywhere in practice) and every call site was updated to pass
+`**effective_scroll_options(editor_state)`. `WindowAPI.scroll_to_cursor()` was the
+highest-leverage single fix, since most plugin call sites go through it.
 
 There's a second, independent place the identical original bug lived:
 `TerminalCursorController.resolve_terminal_cursor_state()`
