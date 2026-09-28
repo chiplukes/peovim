@@ -62,6 +62,25 @@ def test_atomic_write_bytes_retries_on_replace_file_exists(tmp_path, monkeypatch
     assert list(tmp_path.glob("*.tmp")) == []
 
 
+def test_atomic_write_bytes_falls_back_to_in_place_write_when_retry_also_fails(tmp_path, monkeypatch) -> None:
+    # Some GVFS mounts keep raising EEXIST from os.replace() no matter how many
+    # times it's retried (observed in the field on a real AFP share) — verify
+    # we give up on rename() and fall back to a direct overwrite rather than
+    # failing the save a second time.
+    target = tmp_path / "state.bin"
+    target.write_bytes(b"original")
+
+    def _always_eexist(src, dst) -> None:
+        raise FileExistsError(17, "File exists")
+
+    monkeypatch.setattr("peovim.core.persistence.os.replace", _always_eexist)
+
+    atomic_write_bytes(target, b"updated")
+
+    assert target.read_bytes() == b"updated"
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
 def test_atomic_write_bytes_cleans_temp_and_preserves_original_on_replace_failure(tmp_path, monkeypatch) -> None:
     target = tmp_path / "state.bin"
     target.write_bytes(b"original")
