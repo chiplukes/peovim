@@ -117,7 +117,10 @@ def handle_delete_range(d: ActionDispatcher, action: DeleteRange, doc: Document,
 
     d._clamp_cursor_for_mode(doc)
     if action.save_deleted:
-        yank_type = "line" if action.start_col == 0 and action.end_col == LINE_END else "char"
+        if action.yank_type is not None:
+            yank_type = action.yank_type
+        else:
+            yank_type = "line" if action.start_col == 0 and action.end_col == LINE_END else "char"
         d._store_deleted_text(action.register, deleted_text, yank_type)
     d._dot_repeat = action
     if d._insert_session is not None and d.engine.mode == Mode.INSERT:

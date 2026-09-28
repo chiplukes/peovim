@@ -198,14 +198,22 @@ insert session; a session that spans lines or backspaces past its start
 falls back to replaying just the delete at a fixed width, matching `d`'s
 own fallback for non-motion deletes.
 
-Known separate bug, not part of the above: `cc`/`S`-style linewise change
-doesn't open a fresh line to type into — it deletes through the line's
-trailing newline (like `dd`) and inserts the replacement text inline,
-merging it onto the following line instead of leaving it on its own line
-(e.g. `cc` typing "X" on `one`/`two` gives `Xtwo`, not `X` on its own
-line). Dot-repeat for `cc` still correctly re-targets the current line
-when repeated elsewhere — it just inherits this line-merging quirk from
-the underlying command.
+A linewise change (`cc`/`S`, or `c` + a linewise motion like `cG`/`cgg`)
+deletes only the line(s)' content, not their trailing newline, so typing
+the replacement stays on its own line rather than merging onto the
+following one; it's still registered as a linewise yank, so pasting the
+deleted content back with `p` pastes it as a whole line too.
+
+Known separate bug, unrelated to the above: a linewise delete (`dd`, `dG`,
+plain `d`/`c`/`y` + a count large enough to reach the file's last line,
+...) that spans all the way through the file's very last line can silently
+delete nothing, specifically when that file ends with a trailing newline
+(so the buffer's last line is the empty line after it) *and* the range
+starts at line 0. E.g. on a 3-line file with a trailing newline, `dG` from
+line 1 correctly deletes through the end; `100dd` from line 0 does nothing.
+Root cause is in `handle_delete_range`'s edge-case branch for "delete
+through the file's last line" — it only removes that last line's own
+(here: empty) content instead of the whole spanned range.
 
 ---
 

@@ -669,6 +669,32 @@ class TestOperatorGPrefixedMotion:
         assert s.cursor() == (0, 0)
         assert s.text() == "a\nb\nc\n"
 
+    def test_dG_deletes_from_cursor_to_end_of_file(self):
+        s = EditorSession("one\ntwo\nthree\nfour\n")
+        s.type("j")  # cursor -> "two"
+        s.type("dG")
+        assert s.text() == "one"
+
+    def test_cG_changes_from_cursor_to_end_of_file(self):
+        s = EditorSession("one\ntwo\nthree")
+        s.type("cGZZZ<Esc>")
+        assert s.text() == "ZZZ"
+
+    def test_yG_yanks_linewise_without_modifying_buffer(self):
+        s = EditorSession("one\ntwo\nthree\nfour\n")
+        s.type("j")  # cursor -> "two"
+        s.type("yG")
+        assert s.text() == "one\ntwo\nthree\nfour\n"
+        s.type("gg")
+        s.type("p")
+        assert s.text() == "one\ntwo\nthree\nfour\n\ntwo\nthree\nfour\n"
+
+    def test_G_without_operator_still_just_moves(self):
+        s = EditorSession("one\ntwo\nthree")
+        s.type("G")
+        assert s.cursor() == (2, 0)
+        assert s.text() == "one\ntwo\nthree"
+
 
 # ---------------------------------------------------------------------------
 # Dot-repeat re-resolves at the cursor (text objects, motions, linewise)
@@ -738,16 +764,11 @@ class TestChangeDotRepeat:
         assert s.line(0) == "XXbar XX"
 
     def test_cc_dot_repeat_replays_on_current_line(self):
-        # Note: `cc` itself has a pre-existing, separate bug where the typed
-        # replacement merges onto the following line instead of staying on its
-        # own line (not part of this fix — see notes/vim_compatibility.md).
-        # This test only pins that the dot-repeat re-targets the current line
-        # rather than the original one; it isn't asserting `cc` is fully correct.
         s = EditorSession("one\ntwo\nthree\n")
         s.type("ccZZZ<Esc>")
-        assert s.text() == "ZZZtwo\nthree\n"
-        s.type("j.")  # cursor -> "three" (the last line)
-        assert s.text() == "ZZZtwo\nZZZ"
+        assert s.text() == "ZZZ\ntwo\nthree\n"
+        s.type("j.")  # cursor -> "three"
+        assert s.text() == "ZZZ\nZZZ\nthree\n"
 
     def test_ciw_dot_repeat_is_one_undo_step(self):
         s = EditorSession("alpha beta gamma")
@@ -765,3 +786,33 @@ class TestChangeDotRepeat:
         assert s.line(0) == " world"
         s.type("w.")
         assert s.line(0) == " "
+
+
+# ---------------------------------------------------------------------------
+# Linewise change (cc/S, and c + a linewise motion) keeps its own line
+# ---------------------------------------------------------------------------
+
+
+class TestLinewiseChange:
+    def test_cc_keeps_replacement_on_its_own_line(self):
+        s = EditorSession("one\ntwo\nthree\n")
+        s.type("ccZZZ<Esc>")
+        assert s.text() == "ZZZ\ntwo\nthree\n"
+
+    def test_2cc_replaces_two_lines_with_one(self):
+        s = EditorSession("one\ntwo\nthree\nfour\n")
+        s.type("2ccZZZ<Esc>")
+        assert s.text() == "ZZZ\nthree\nfour\n"
+
+    def test_cc_on_last_line_of_file_does_not_merge_backward(self):
+        s = EditorSession("one\ntwo\nthree\n")
+        s.type("jj")  # cursor -> "three"
+        s.type("ccZZZ<Esc>")
+        assert s.text() == "one\ntwo\nZZZ\n"
+
+    def test_cc_deleted_line_pastes_back_as_its_own_line(self):
+        s = EditorSession("one\ntwo\nthree\n")
+        s.type("ccZZZ<Esc>")  # deletes "one" into the register
+        s.type("j")  # cursor -> "two"
+        s.type("p")
+        assert s.text() == "ZZZ\ntwo\none\nthree\n"

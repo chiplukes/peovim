@@ -50,8 +50,14 @@ def _apply_change_repeat(dispatcher, action: ChangeRepeat) -> None:
     """
     cursor = dispatcher.window.cursor
     document = dispatcher.window.document
+    # A change never deletes through the trailing newline (see _rebase_range's
+    # content_only doc) — it always leaves one line/range to type into, and
+    # a linewise-sourced change still registers as a linewise yank.
+    is_linewise = action.linewise_count is not None or (
+        action.motion_fn is not None and action.motion_range_type == "line"
+    )
 
-    rebased = _rebase_range(action, cursor, document)
+    rebased = _rebase_range(action, cursor, document, content_only=True)
     if rebased is not None:
         sl, sc, el, ec = rebased
     elif action.start_line != action.end_line or action.end_col == LINE_END:
@@ -66,7 +72,17 @@ def _apply_change_repeat(dispatcher, action: ChangeRepeat) -> None:
         sl, sc, el, ec = line, col, line, min(col + width, len(document.get_line(line)))
 
     with document.compound_edit():
-        dispatcher._apply(DeleteRange(sl, sc, el, ec, register=action.register, save_deleted=True))
+        dispatcher._apply(
+            DeleteRange(
+                sl,
+                sc,
+                el,
+                ec,
+                register=action.register,
+                save_deleted=True,
+                yank_type="line" if is_linewise else None,
+            )
+        )
         # Insert exactly where the deleted range started — reading the cursor
         # back here instead would get clamped to Normal-mode bounds (no
         # one-past-the-end column), unlike the live "c{motion}" path where this
@@ -174,14 +190,22 @@ def _rebase_repeat_action(dispatcher, action: object) -> object:
     return action
 
 
-def _rebase_range(action, cursor, document) -> tuple[int, int, int, int] | None:
+def _rebase_range(action, cursor, document, *, content_only: bool = False) -> tuple[int, int, int, int] | None:
     """Re-derive (start_line, start_col, end_line, end_col) for `action` at the
     current cursor, using whichever provenance it carries (text object, doubled
     linewise operator, or motion). Returns None if `action` carries none of
     these, so the caller can fall back to its own default behavior.
+
+    `content_only` swaps the LINE_END sentinel (used by "d"-style linewise
+    deletes, which remove through the trailing newline) for a concrete end
+    column (the target line's length) — for a "c"-style change, which must
+    leave the newline in place so typing doesn't merge onto the next line.
     """
     line = cursor.line
     col = min(cursor.col, len(document.get_line(line)))
+
+    def _line_end(target_line: int) -> int:
+        return len(document.get_line(target_line)) if content_only else LINE_END
 
     if action.text_object_key is not None:
         from peovim.modal.engine import _resolve_text_object
@@ -193,14 +217,14 @@ def _rebase_range(action, cursor, document) -> tuple[int, int, int, int] | None:
 
     if action.linewise_count is not None:
         end_line = min(line + action.linewise_count - 1, document.line_count() - 1)
-        return (line, 0, end_line, LINE_END)
+        return (line, 0, end_line, _line_end(end_line))
 
     if action.motion_fn is not None:
         new_line, new_col = action.motion_fn(document, line, col, action.motion_count)
         # Mirror the range normalization from engine._resolve_operator_motion
         if action.motion_range_type == "line":
             start = (min(line, new_line), 0)
-            end = (max(line, new_line), LINE_END)
+            end = (max(line, new_line), _line_end(max(line, new_line)))
         else:
             start = min((line, col), (new_line, new_col))
             end = max((line, col), (new_line, new_col))

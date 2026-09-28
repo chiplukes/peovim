@@ -19,7 +19,7 @@ from __future__ import annotations
 import enum
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 if TYPE_CHECKING:
     from peovim.core.document import Document
@@ -727,14 +727,25 @@ class ModalEngine:  # cm:5c8e7a
                 )
             ]
         if op == "c":
+            # A linewise change must not delete through the trailing newline like
+            # "d" does — that would merge the typed replacement onto the following
+            # line. Delete just the line(s)' content instead, leaving one empty
+            # line to type into, and force yank_type since end_col is no longer
+            # the LINE_END sentinel the register-type inference relies on.
+            change_end = end
+            change_yank_type: Literal["char", "line"] | None = None
+            if range_type == "line":
+                change_yank_type = "line"
+                if self._document is not None:
+                    change_end = (end[0], len(self._document.get_line(end[0])))
             return [
                 CompoundAction(
                     (
                         DeleteRange(
                             start[0],
                             start[1],
-                            end[0],
-                            end[1],
+                            change_end[0],
+                            change_end[1],
                             register=reg,
                             save_deleted=True,
                             motion_fn=motion_fn,
@@ -745,6 +756,7 @@ class ModalEngine:  # cm:5c8e7a
                             text_object_key=text_object_key,
                             text_object_mode=text_object_mode,
                             linewise_count=linewise_count,
+                            yank_type=change_yank_type,
                         ),
                         EnterInsertMode("cursor"),
                     ),
@@ -828,6 +840,10 @@ class ModalEngine:  # cm:5c8e7a
         if op == "y":
             return [YankLine(line, count, state.register)]
         if op == "c":
+            # Content-only delete (see the matching comment in _operator_range_actions):
+            # keeps the line(s)' trailing newline intact so typing doesn't merge
+            # onto the following line, while still registering as a linewise yank.
+            change_end_col = len(self._document.get_line(end_line)) if self._document is not None else 0x7FFFFFFF
             return [
                 CompoundAction(
                     (
@@ -835,10 +851,11 @@ class ModalEngine:  # cm:5c8e7a
                             line,
                             0,
                             end_line,
-                            0x7FFFFFFF,
+                            change_end_col,
                             register=state.register,
                             save_deleted=True,
                             linewise_count=count,
+                            yank_type="line",
                         ),
                         EnterInsertMode("cursor"),
                     ),
@@ -2072,6 +2089,17 @@ class ModalEngine:  # cm:5c8e7a
             motion_fn=move_minus,
             range_type="line",
         )
+
+        def move_G(doc: Any, line: int, col: int, count: int) -> tuple[int, int]:
+            # The operator-pending "is_motion" trie dispatch only passes the
+            # already-normalized effective count (always >= 1), so an explicit
+            # "1" is indistinguishable here from no count at all — this treats
+            # both as "last line", same as bare G. An explicit target line via
+            # an operator is still reachable unambiguously with gg (e.g. "d1gg").
+            if count > 1:
+                return (min(count - 1, doc.line_count() - 1), 0)
+            return (doc.line_count() - 1, 0)
+
         self._add(
             N,
             "G",
@@ -2082,6 +2110,9 @@ class ModalEngine:  # cm:5c8e7a
                     add_to_jumplist=True,
                 )
             ],
+            is_motion=True,
+            motion_fn=move_G,
+            range_type="line",
         )
 
         # --- Search ---

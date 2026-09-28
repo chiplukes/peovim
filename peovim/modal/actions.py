@@ -66,6 +66,11 @@ class DeleteRange(Action):
     text_object_key: str | None = field(default=None, compare=False, hash=False)
     text_object_mode: str | None = field(default=None, compare=False, hash=False)
     linewise_count: int | None = field(default=None, compare=False, hash=False)
+    # Overrides the register's inferred yank type ("line" vs "char", normally
+    # inferred from start_col == 0 and end_col == LINE_END). Needed when a
+    # delete should register as linewise without actually spanning through the
+    # line's trailing newline (e.g. a "cc"-style content-only delete).
+    yank_type: Literal["char", "line"] | None = field(default=None, compare=False, hash=False)
 
 
 @dataclass(frozen=True)
