@@ -249,6 +249,51 @@ class TestBuiltinCommands:
         for i in range(3):
             assert ctx.doc.get_line(i) == "bar"
 
+    def test_substitute_is_case_sensitive_by_default(self):
+        ctx = MockContext("tree\nTree")
+        reg = self._make_registry()
+        pc = parse_ex_command("%s/tree/X/")
+        reg.execute(pc, ctx)
+        assert ctx.doc.get_line(0) == "X"
+        assert ctx.doc.get_line(1) == "Tree"
+
+    def test_substitute_honors_ignorecase_and_smartcase_options(self):
+        ctx = MockContext("tree\nTree")
+        ctx.editor_state.options.set("ignorecase", True)
+        ctx.editor_state.options.set("smartcase", True)
+        reg = self._make_registry()
+        pc = parse_ex_command("%s/tree/X/")
+        reg.execute(pc, ctx)
+        assert ctx.doc.get_line(0) == "X"
+        assert ctx.doc.get_line(1) == "X"
+
+    def test_substitute_smartcase_forces_case_sensitive_for_uppercase_pattern(self):
+        ctx = MockContext("tree\nTree")
+        ctx.editor_state.options.set("ignorecase", True)
+        ctx.editor_state.options.set("smartcase", True)
+        reg = self._make_registry()
+        pc = parse_ex_command("%s/Tree/X/")
+        reg.execute(pc, ctx)
+        assert ctx.doc.get_line(0) == "tree"
+        assert ctx.doc.get_line(1) == "X"
+
+    def test_substitute_i_flag_overrides_default_case_sensitivity(self):
+        ctx = MockContext("tree\nTree")
+        reg = self._make_registry()
+        pc = parse_ex_command("%s/tree/X/i")
+        reg.execute(pc, ctx)
+        assert ctx.doc.get_line(0) == "X"
+        assert ctx.doc.get_line(1) == "X"
+
+    def test_substitute_I_flag_overrides_ignorecase_option(self):
+        ctx = MockContext("tree\nTree")
+        ctx.editor_state.options.set("ignorecase", True)
+        reg = self._make_registry()
+        pc = parse_ex_command("%s/tree/X/I")
+        reg.execute(pc, ctx)
+        assert ctx.doc.get_line(0) == "X"
+        assert ctx.doc.get_line(1) == "Tree"
+
     def test_set_option(self):
         ctx = MockContext()
         reg = self._make_registry()

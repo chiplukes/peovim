@@ -491,7 +491,7 @@ does not replay (line numbers become unreliable once the line count changes).
 |---|---|---|
 | `:{range}d {reg}` | ✓ | |
 | `:{range}y {reg}` | ✓ | |
-| `:{range}s/{pat}/{rep}/{flags}` | ✓ | `g`, `i`, `c` flags |
+| `:{range}s/{pat}/{rep}/{flags}` | ✓ | `g`, `i`, `I`, `c` flags. With neither `i` nor `I`, falls back to `ignorecase`/`smartcase` (same rule as `/` search); the live preview while typing the command uses the identical rule, so it highlights exactly what the command will change |
 | `:%s/...` | ✓ | |
 | `:'<,'>s/...` | ✓ | |
 | `:{range}m {addr}` | ✗ | move lines |
@@ -589,6 +589,13 @@ several cases (e.g. `expandtab`, `tabstop`, `autoindent`, `hlsearch`, `scrolloff
 | `smartcase` / `scs` | bool | false | ✓ |
 | `wrapscan` / `ws` | bool | true | ✓ |
 | `incsearch` / `is` | bool | false | ~ |
+
+`ignorecase`/`smartcase` apply consistently everywhere a pattern gets
+compiled: `/`/`?` search (confirmed jump, persistent `hlsearch` highlight,
+and the live as-you-type incsearch highlight) and `:s` substitute (the
+actual command and its live preview) all use the same case rule —
+`compile_pattern` in `peovim/core/search.py` — unless `:s` is given an
+explicit `i`/`I` flag, which overrides the options outright, same as Vim.
 
 ### Behavior
 | Option | Type | Default | Status |

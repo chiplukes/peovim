@@ -295,10 +295,24 @@ class WindowRenderController:  # cm:9d6c3f
 
             sub = _parse_sub_preview(host._cmdline.text)
             if sub is not None:
-                pat_str, replacement, _flags, all_lines, visual_range = sub
+                pat_str, replacement, flags, all_lines, visual_range = sub
                 if pat_str:
+                    # Mirror _cmd_substitute's case rules exactly, so the preview
+                    # highlights what the command will actually change: an explicit
+                    # i/I flag overrides ignorecase/smartcase outright; otherwise
+                    # fall back to those options.
+                    opts = host._editor_state.options if host._editor_state is not None else None
                     try:
-                        compiled = compile_pattern(pat_str)
+                        if "I" in flags:
+                            compiled = compile_pattern(pat_str, ignorecase=False)
+                        elif "i" in flags:
+                            compiled = compile_pattern(pat_str, ignorecase=True)
+                        else:
+                            compiled = compile_pattern(
+                                pat_str,
+                                ignorecase=opts.get("ignorecase", False) if opts is not None else False,
+                                smartcase=opts.get("smartcase", False) if opts is not None else False,
+                            )
                     except Exception:
                         compiled = None
                     if compiled:
@@ -327,8 +341,13 @@ class WindowRenderController:  # cm:9d6c3f
         if host._cmdline.active and host._cmdline.prompt in ("/", "?") and host._cmdline.text:
             import contextlib
 
+            opts = host._editor_state.options if host._editor_state is not None else None
             with contextlib.suppress(Exception):
-                compiled = compile_pattern(host._cmdline.text)
+                compiled = compile_pattern(
+                    host._cmdline.text,
+                    ignorecase=opts.get("ignorecase", False) if opts is not None else False,
+                    smartcase=opts.get("smartcase", False) if opts is not None else False,
+                )
         elif (
             host._editor_state is not None
             and host._editor_state.search.hlsearch_active

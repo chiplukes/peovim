@@ -426,3 +426,135 @@ class TestNohlsearchCommand:
 
         handler(parsed, FakeCtx())
         assert es.search.hlsearch_active is False
+
+
+# ---------------------------------------------------------------------------
+# Incremental (as-you-type) search highlight respects ignorecase/smartcase
+#
+# The confirmed-search path (SetSearchPattern -> editor_state.search.compiled,
+# tested above) already honored these options. The live preview while /pat is
+# still being typed compiled the pattern separately in
+# WindowRenderController._build_search_decorations and used to ignore them
+# entirely, so what got highlighted while typing didn't match what Enter/n/N
+# would actually find.
+# ---------------------------------------------------------------------------
+
+
+class _RenderHostStub:
+    def __init__(self, editor_state):
+        self._editor_state = editor_state
+        self._cmdline = None
+
+
+def _incsearch_decorations(content: str, pattern: str, *, ignorecase: bool = False, smartcase: bool = False):
+    from test_api import _make_api
+
+    from peovim.ui.command_line import CommandLine
+    from peovim.ui.window_render_controller import WindowRenderController
+
+    api = _make_api(content)
+    api.options.set("ignorecase", ignorecase)
+    api.options.set("smartcase", smartcase)
+
+    win = api.active_window()
+    win._window.height = 20
+    win._window.width = 80
+
+    cmdline = CommandLine()
+    cmdline.enter("/", pattern)
+
+    host = _RenderHostStub(api._editor_state)
+    host._cmdline = cmdline
+    rc = WindowRenderController(host)
+
+    global_opts = api._editor_state.options.global_as_dict()
+    snapshot = rc.snapshot_window_for_render(win._window, global_opts=global_opts)
+    return rc.build_window_render_decorations(win._window, snapshot, is_active=False)
+
+
+def _incsearch_highlighted_text(
+    content: str, pattern: str, *, ignorecase: bool = False, smartcase: bool = False
+) -> set[str]:
+    lines = content.splitlines()
+    decorations = _incsearch_decorations(content, pattern, ignorecase=ignorecase, smartcase=smartcase)
+    return {lines[dec.start_line][dec.start_col : dec.end_col] for dec in decorations}
+
+
+class TestIncsearchCaseOptions:
+    def test_lowercase_pattern_highlights_all_cases_with_ignorecase_and_smartcase(self):
+        hits = _incsearch_highlighted_text("tree\nTree\nTREE\n", "tree", ignorecase=True, smartcase=True)
+        assert hits == {"tree", "Tree", "TREE"}
+
+    def test_uppercase_letter_in_pattern_forces_case_sensitive_via_smartcase(self):
+        hits = _incsearch_highlighted_text("tree\nTree\nTREE\n", "Tree", ignorecase=True, smartcase=True)
+        assert hits == {"Tree"}
+
+    def test_without_ignorecase_option_stays_case_sensitive(self):
+        decorations = _incsearch_decorations("tree\nTree\n", "tree")
+        assert len(decorations) == 1
+        assert decorations[0].start_line == 0
+
+
+# ---------------------------------------------------------------------------
+# ":s" substitute live preview respects ignorecase/smartcase and i/I flags,
+# matching what _cmd_substitute will actually change.
+# ---------------------------------------------------------------------------
+
+
+def _subpreview_decorations(content: str, cmdline_text: str, *, ignorecase: bool = False, smartcase: bool = False):
+    from test_api import _make_api
+
+    from peovim.ui.command_line import CommandLine
+    from peovim.ui.window_render_controller import WindowRenderController
+
+    api = _make_api(content)
+    api.options.set("ignorecase", ignorecase)
+    api.options.set("smartcase", smartcase)
+
+    win = api.active_window()
+    win._window.height = 20
+    win._window.width = 80
+
+    cmdline = CommandLine()
+    cmdline.enter(":", cmdline_text)
+
+    host = _RenderHostStub(api._editor_state)
+    host._cmdline = cmdline
+    rc = WindowRenderController(host)
+
+    global_opts = api._editor_state.options.global_as_dict()
+    snapshot = rc.snapshot_window_for_render(win._window, global_opts=global_opts)
+    return rc.build_window_render_decorations(win._window, snapshot, is_active=False)
+
+
+def _subpreview_highlighted_text(
+    content: str, cmdline_text: str, *, ignorecase: bool = False, smartcase: bool = False
+) -> set[str]:
+    lines = content.splitlines()
+    decorations = _subpreview_decorations(content, cmdline_text, ignorecase=ignorecase, smartcase=smartcase)
+    return {lines[dec.start_line][dec.start_col : dec.end_col] for dec in decorations}
+
+
+class TestSubstitutePreviewCaseOptions:
+    def test_default_is_case_sensitive(self):
+        hits = _subpreview_highlighted_text("tree\nTree\n", "%s/tree")
+        assert hits == {"tree"}
+
+    def test_honors_ignorecase_and_smartcase_options(self):
+        hits = _subpreview_highlighted_text("tree\nTree\n", "%s/tree", ignorecase=True, smartcase=True)
+        assert hits == {"tree", "Tree"}
+
+    def test_smartcase_forces_case_sensitive_for_uppercase_pattern(self):
+        hits = _subpreview_highlighted_text("tree\nTree\n", "%s/Tree", ignorecase=True, smartcase=True)
+        assert hits == {"Tree"}
+
+    def test_i_flag_overrides_default_case_sensitivity(self):
+        # Empty replacement keeps the preview as plain HighlightRegions (a
+        # non-empty one mixes in OverlayChar cells) so the match text can be
+        # read straight back off start_col:end_col.
+        hits = _subpreview_highlighted_text("tree\nTree\n", "%s/tree//i")
+        assert hits == {"tree", "Tree"}
+
+    def test_I_flag_overrides_ignorecase_option(self):
+        hits = _subpreview_highlighted_text("tree\nTree\n", "%s/tree//I", ignorecase=True)
+        assert hits == {"tree"}

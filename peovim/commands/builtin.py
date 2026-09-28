@@ -597,13 +597,28 @@ def _cmd_substitute(cmd: ParsedCommand, ctx: Any) -> None:
 
     count_flag = "g" in flags_str
     confirm_flag = "c" in flags_str
-    ignore_case = "i" in flags_str
+    ignore_case_flag = "i" in flags_str
+    force_case_flag = "I" in flags_str
 
     start, end = _resolve_range(cmd, ctx)
 
     try:
-        re_flags = re.IGNORECASE if ignore_case else 0
-        compiled = re.compile(pattern, re_flags)
+        from peovim.core.search import compile_pattern
+
+        # An explicit i/I flag on the command overrides 'ignorecase'/'smartcase'
+        # outright (matching Vim); with neither, fall back to those options —
+        # same case rules as / search.
+        if force_case_flag:
+            compiled = compile_pattern(pattern, ignorecase=False)
+        elif ignore_case_flag:
+            compiled = compile_pattern(pattern, ignorecase=True)
+        else:
+            opts = es.options if es is not None else None
+            compiled = compile_pattern(
+                pattern,
+                ignorecase=opts.get("ignorecase", False) if opts is not None else False,
+                smartcase=opts.get("smartcase", False) if opts is not None else False,
+            )
 
         if confirm_flag and es is not None:
             # Collect all matches — apply interactively via event loop confirm state
