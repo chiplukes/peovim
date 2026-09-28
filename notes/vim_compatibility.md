@@ -204,16 +204,13 @@ the replacement stays on its own line rather than merging onto the
 following one; it's still registered as a linewise yank, so pasting the
 deleted content back with `p` pastes it as a whole line too.
 
-Known separate bug, unrelated to the above: a linewise delete (`dd`, `dG`,
-plain `d`/`c`/`y` + a count large enough to reach the file's last line,
-...) that spans all the way through the file's very last line can silently
-delete nothing, specifically when that file ends with a trailing newline
-(so the buffer's last line is the empty line after it) *and* the range
-starts at line 0. E.g. on a 3-line file with a trailing newline, `dG` from
-line 1 correctly deletes through the end; `100dd` from line 0 does nothing.
-Root cause is in `handle_delete_range`'s edge-case branch for "delete
-through the file's last line" — it only removes that last line's own
-(here: empty) content instead of the whole spanned range.
+A linewise delete spanning all the way through the file's very last line
+(`dd`/`dG`/a large count, ...) correctly deletes the whole span even when
+that last line is the empty line left by a trailing newline and the range
+starts at line 0 (e.g. `100dd` or `dG` from the top of a 3-line file with a
+trailing newline empties the buffer). The one true no-op case is deleting
+a single already-empty last line on its own (`dd` when it's both the start
+and end of the range and has no content) — nothing to remove there.
 
 ---
 

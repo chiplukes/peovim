@@ -101,7 +101,12 @@ def handle_delete_range(d: ActionDispatcher, action: DeleteRange, doc: Document,
             else:
                 line_len = len(doc.get_line(el))
                 event_end_col = line_len
-                if line_len > 0:
+                # Skip only the genuine no-op: sl == el and that line is already
+                # empty. A multi-line span (sl < el) must still delete even when
+                # the last line happens to be empty (e.g. a file's trailing blank
+                # line from a terminal newline) — otherwise everything before it
+                # is silently left untouched.
+                if sl < el or line_len > 0:
                     doc.delete(sl, 0, el, line_len)
             cur.move_to(min(sl, doc.line_count() - 1), 0)
     else:

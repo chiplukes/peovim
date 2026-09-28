@@ -816,3 +816,42 @@ class TestLinewiseChange:
         s.type("j")  # cursor -> "two"
         s.type("p")
         assert s.text() == "ZZZ\ntwo\none\nthree\n"
+
+
+# ---------------------------------------------------------------------------
+# Linewise delete spanning through the file's very last line
+# ---------------------------------------------------------------------------
+
+
+class TestLinewiseDeleteThroughLastLine:
+    def test_dd_with_large_count_deletes_whole_trailing_newline_file(self):
+        # A file ending in "\n" has an empty trailing line; a delete spanning
+        # from line 0 all the way through that empty last line used to no-op
+        # entirely instead of removing everything before it.
+        s = EditorSession("one\ntwo\nthree\n")
+        s.type("100dd")
+        assert s.text() == ""
+
+    def test_dG_from_top_deletes_whole_trailing_newline_file(self):
+        s = EditorSession("one\ntwo\nthree\n")
+        s.type("dG")
+        assert s.text() == ""
+
+    def test_dd_on_lone_empty_trailing_line_is_still_a_noop(self):
+        # sl == el and that line is already empty — genuinely nothing to delete.
+        s = EditorSession("one\n")
+        s.type("G")
+        assert s.cursor() == (1, 0)
+        s.type("dd")
+        assert s.text() == "one"
+
+    def test_dd_on_last_nonempty_line_still_works(self):
+        s = EditorSession("one\ntwo\nthree\n")
+        s.type("jj")
+        s.type("dd")
+        assert s.text() == "one\ntwo\n"
+
+    def test_dd_with_large_count_on_file_without_trailing_newline(self):
+        s = EditorSession("one\ntwo\nthree")
+        s.type("100dd")
+        assert s.text() == ""
