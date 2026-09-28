@@ -562,3 +562,77 @@ class TestDotRepeatMotion:
         assert s.line(0) == "ello"
         s.type(".")  # repeat -> "llo"
         assert s.line(0) == "llo"
+
+
+# ---------------------------------------------------------------------------
+# Operator + text object in Normal mode (diw, g~iw, etc.)
+# ---------------------------------------------------------------------------
+
+
+class TestOperatorTextObject:
+    def test_diw_deletes_inner_word(self):
+        s = EditorSession("hello world")
+        s.type("diw")
+        assert s.line(0) == " world"
+
+    def test_daw_deletes_word_and_trailing_space(self):
+        s = EditorSession("hello world")
+        s.type("daw")
+        assert s.line(0) == "world"
+
+    def test_ciw_deletes_word_and_enters_insert(self):
+        s = EditorSession("hello world")
+        s.type("ciw")
+        assert s.line(0) == " world"
+        assert s.mode() == Mode.INSERT
+
+    def test_yiw_yanks_without_modifying_buffer(self):
+        s = EditorSession("hello world")
+        s.type("yiw")
+        assert s.line(0) == "hello world"
+        assert s.reg() == "hello"
+
+    def test_di_quote_deletes_inside_quotes(self):
+        s = EditorSession('say "hi there" now')
+        s.type('di"')
+        assert s.line(0) == 'say "" now'
+
+    def test_greater_iw_is_still_a_noop_for_a_single_word(self):
+        # >iw on a charwise word range indents the (single) line under it —
+        # mainly here to confirm the operator dispatch reaches IndentRange
+        # rather than silently doing nothing.
+        s = EditorSession("hello world")
+        s.type(">iw")
+        assert s.line(0).startswith(" ") or s.line(0).startswith("\t")
+
+
+class TestCaseOperator:
+    def test_g_tilde_iw_toggles_case_of_word(self):
+        s = EditorSession("hello world")
+        s.type("g~iw")
+        assert s.line(0) == "HELLO world"
+
+    def test_guiw_lowercases_word(self):
+        s = EditorSession("HELLO world")
+        s.type("guiw")
+        assert s.line(0) == "hello world"
+
+    def test_gUiw_uppercases_word(self):
+        s = EditorSession("hello world")
+        s.type("gUiw")
+        assert s.line(0) == "HELLO world"
+
+    def test_g_tilde_g_tilde_toggles_whole_line(self):
+        s = EditorSession("Hello World")
+        s.type("g~~")
+        assert s.line(0) == "hELLO wORLD"
+
+    def test_guu_lowercases_whole_line(self):
+        s = EditorSession("Hello World")
+        s.type("guu")
+        assert s.line(0) == "hello world"
+
+    def test_gUU_uppercases_whole_line(self):
+        s = EditorSession("hello world")
+        s.type("gUU")
+        assert s.line(0) == "HELLO WORLD"

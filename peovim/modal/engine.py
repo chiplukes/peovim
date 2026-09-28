@@ -476,10 +476,17 @@ class ModalEngine:  # cm:5c8e7a
         if state.key_buffer:
             state.key_buffer.append(key)
             seq = list(state.key_buffer)
+            had_operator = state.operator is not None
             result = self._resolve_multi_key(seq, state)
             if result is not None:
                 state.reset()
                 return result
+            if not had_operator and state.operator is not None:
+                # A g~/gu/gU-style two-key operator was just set (still needs a
+                # motion or text object). Stop here rather than falling through
+                # to replay the key that completed it as a fresh keystroke.
+                state.key_buffer.clear()
+                return []
             # Check if still a valid prefix (needs more keys)
             if self._is_normal_prefix(seq):
                 return []
@@ -518,7 +525,10 @@ class ModalEngine:  # cm:5c8e7a
         # --- Operator-pending: doubled operator = linewise ---
         if state.operator is not None:
             op = state.operator
-            if key == op:
+            # Two-key operators (g~, gu, gU) double via their second key alone:
+            # g~~, guu, gUU — not by repeating the full two-key operator.
+            doubled = key == op or (len(op) == 2 and op[0] == "g" and key == op[1])
+            if doubled:
                 result = self._resolve_linewise_operator(state)
                 state.reset()
                 return result
@@ -642,6 +652,43 @@ class ModalEngine:  # cm:5c8e7a
                 line_text = self._document.get_line(end[0])
                 end = (end[0], min(end[1] + 1, len(line_text)))
 
+        if op == "!":
+            self._filter_range = (min(cursor[0], target[0]), max(cursor[0], target[0]))
+            return [EnterCommandMode("!")]
+
+        return self._operator_range_actions(
+            op,
+            reg,
+            start,
+            end,
+            range_type,
+            count=state.effective_count(),
+            motion_fn=motion_fn,
+            motion_count=motion_count,
+            motion_end_exclusive=motion_end_exclusive,
+            motion_end_inclusive=motion_end_inclusive,
+        )
+
+    def _operator_range_actions(
+        self,
+        op: str | None,
+        reg: str,
+        start: tuple[int, int],
+        end: tuple[int, int],
+        range_type: str,
+        *,
+        count: int = 1,
+        motion_fn: MotionFn | None = None,
+        motion_count: int = 1,
+        motion_end_exclusive: bool = False,
+        motion_end_inclusive: bool = False,
+    ) -> list[Action]:
+        """Produce Action(s) applying `op` to an already-resolved [start, end) range.
+
+        Shared by motion-based operator resolution (`_resolve_operator_motion`) and
+        text-object-based operator resolution, both of which reduce to "apply this
+        operator to this range" once the range itself has been worked out.
+        """
         if op == "d":
             return [
                 DeleteRange(
@@ -680,9 +727,9 @@ class ModalEngine:  # cm:5c8e7a
                 )
             ]
         if op == ">":
-            return [IndentRange(start[0], end[0], "in", state.effective_count())]
+            return [IndentRange(start[0], end[0], "in", count)]
         if op == "<":
-            return [IndentRange(start[0], end[0], "out", state.effective_count())]
+            return [IndentRange(start[0], end[0], "out", count)]
         if op == "=":
             return [FormatRange(start[0], end[0])]
         if op == "g~":
@@ -691,9 +738,6 @@ class ModalEngine:  # cm:5c8e7a
             return [ChangeCase(start[0], start[1], end[0], end[1], "lower")]
         if op == "gU":
             return [ChangeCase(start[0], start[1], end[0], end[1], "upper")]
-        if op == "!":
-            self._filter_range = (min(cursor[0], target[0]), max(cursor[0], target[0]))
-            return [EnterCommandMode("!")]
         return []
 
     def _resolve_linewise_operator(self, state: ParseState) -> list[Action]:
@@ -725,6 +769,12 @@ class ModalEngine:  # cm:5c8e7a
         if op == "!":
             self._filter_range = (line, end_line)
             return [EnterCommandMode("!")]
+        if op == "g~":
+            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "toggle")]
+        if op == "gu":
+            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "lower")]
+        if op == "gU":
+            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "upper")]
         return []
 
     def _resolve_multi_key(self, seq: list[str], state: ParseState) -> list[Action] | None:
@@ -842,7 +892,17 @@ class ModalEngine:  # cm:5c8e7a
 
         # Text object in operator-pending: i{char} or a{char}
         if len(seq) == 2 and seq[0] in ("i", "a") and state.operator is not None:
-            return []  # Phase 2: text_objects.py
+            if self._document is None:
+                return []
+            obj_mode = "inner" if seq[0] == "i" else "outer"
+            line, col = self._cursor
+            rng = _resolve_text_object(self._document, line, col, seq[1], obj_mode)
+            if rng is None:
+                return []
+            sl, sc, el, ec = rng
+            return self._operator_range_actions(
+                state.operator, state.register, (sl, sc), (el, ec), "char", count=state.effective_count()
+            )
 
         # r{char} — replace char at cursor
         if len(seq) == 2 and seq[0] == "r":

@@ -16,7 +16,7 @@ Legend: **✓ implemented** | **~ partial** | **✗ not implemented**
 | Search (`/`/`?`/`n`/`N`/`*`/`#`) | ✓ | |
 | Marks (`m`/`'`/`` ` ``) | ✓ | |
 | Operators (`d`,`c`,`y`,`>`,`<`,`=`,`!`,`~`) | ~ | `~` operator works via `g~`; single-char `~` not bound |
-| Text objects | ✓ | |
+| Text objects | ~ | word/quotes/brackets/paragraph only — `W`/`s`/`t` (WORD, sentence, tag) not implemented |
 | Insert / change / delete commands (`i`,`a`,`I`,`A`,`o`,`O`,`x`,`X`,`s`) | ✓ | `S`,`C`,`D` not bound |
 | Paste (`p`/`P`) | ✓ | `gp`/`gP`, `]p` not yet bound |
 | Case toggle (`g~`/`gu`/`gU`) / `Ctrl-A` / `Ctrl-X` | ✓ | single-char `~` not bound |
@@ -176,14 +176,21 @@ Legend: **✓ implemented** | **~ partial** | **✗ not implemented**
 | `gq` | format (wrap lines) _(not implemented)_ |
 
 **Operator shorthand (doubled = whole line):**
-`dd`, `yy`, `cc`, `>>`, `<<`, `==`, `g~~` (guu`, `gUU` work)
+`dd`, `yy`, `cc`, `>>`, `<<`, `==`, `g~~`, `guu`, `gUU`
+
+Note: `dgg` and similar operator + `gg`/section-jump combos don't yet apply
+the pending operator (`gg` always just moves the cursor) — only the doubled
+shorthand above and operator + text object (`diw`, `g~iw`, ...) are wired up.
 
 ---
 
 ## Text Objects (used after operator or in Visual)
 
-### Word/WORD
-`iw` `aw` `iW` `aW`
+Work identically after an operator (`diw`, `g~iw`, ...) or as a Visual-mode
+selection (`viw`, ...).
+
+### Word
+`iw` `aw` — `iW`/`aW` (WORD) _not implemented_
 
 ### Quoted strings
 `i"` `a"` `i'` `a'` `` i` `` `` a` ``
@@ -195,9 +202,11 @@ Legend: **✓ implemented** | **~ partial** | **✗ not implemented**
 `i<` `a<`             (angle brackets)
 
 ### Blocks
-`ip` `ap`  paragraph
-`is` `as`  sentence
-`it` `at`  HTML/XML tag
+`ip` `ap`  paragraph — treated as a characterwise range rather than fully
+linewise, so it can leave a blank line behind instead of removing the
+paragraph's line breaks entirely
+
+`is`/`as` (sentence), `it`/`at` (HTML/XML tag) — _not implemented_
 
 ---
 
