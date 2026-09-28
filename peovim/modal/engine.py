@@ -682,12 +682,19 @@ class ModalEngine:  # cm:5c8e7a
         motion_count: int = 1,
         motion_end_exclusive: bool = False,
         motion_end_inclusive: bool = False,
+        text_object_key: str | None = None,
+        text_object_mode: str | None = None,
+        linewise_count: int | None = None,
     ) -> list[Action]:
         """Produce Action(s) applying `op` to an already-resolved [start, end) range.
 
-        Shared by motion-based operator resolution (`_resolve_operator_motion`) and
-        text-object-based operator resolution, both of which reduce to "apply this
-        operator to this range" once the range itself has been worked out.
+        Shared by motion-based operator resolution (`_resolve_operator_motion`),
+        text-object-based operator resolution, and doubled-linewise operator
+        resolution (`_resolve_linewise_operator`) — all three reduce to "apply this
+        operator to this range" once the range itself has been worked out. The
+        `motion_fn` / `text_object_key` / `linewise_count` parameters (at most one
+        set at a time) are threaded onto the produced action purely so dot-repeat
+        can re-resolve the same range at the cursor's position when repeated.
         """
         if op == "d":
             return [
@@ -703,6 +710,9 @@ class ModalEngine:  # cm:5c8e7a
                     motion_range_type=range_type,
                     motion_end_exclusive=motion_end_exclusive,
                     motion_end_inclusive=motion_end_inclusive,
+                    text_object_key=text_object_key,
+                    text_object_mode=text_object_mode,
+                    linewise_count=linewise_count,
                 )
             ]
         if op == "y":
@@ -720,7 +730,22 @@ class ModalEngine:  # cm:5c8e7a
             return [
                 CompoundAction(
                     (
-                        DeleteRange(start[0], start[1], end[0], end[1], register=reg, save_deleted=True),
+                        DeleteRange(
+                            start[0],
+                            start[1],
+                            end[0],
+                            end[1],
+                            register=reg,
+                            save_deleted=True,
+                            motion_fn=motion_fn,
+                            motion_count=motion_count,
+                            motion_range_type=range_type,
+                            motion_end_exclusive=motion_end_exclusive,
+                            motion_end_inclusive=motion_end_inclusive,
+                            text_object_key=text_object_key,
+                            text_object_mode=text_object_mode,
+                            linewise_count=linewise_count,
+                        ),
                         EnterInsertMode("cursor"),
                     ),
                     "change",
@@ -733,11 +758,59 @@ class ModalEngine:  # cm:5c8e7a
         if op == "=":
             return [FormatRange(start[0], end[0])]
         if op == "g~":
-            return [ChangeCase(start[0], start[1], end[0], end[1], "toggle")]
+            return [
+                ChangeCase(
+                    start[0],
+                    start[1],
+                    end[0],
+                    end[1],
+                    "toggle",
+                    motion_fn=motion_fn,
+                    motion_count=motion_count,
+                    motion_range_type=range_type,
+                    motion_end_exclusive=motion_end_exclusive,
+                    motion_end_inclusive=motion_end_inclusive,
+                    text_object_key=text_object_key,
+                    text_object_mode=text_object_mode,
+                    linewise_count=linewise_count,
+                )
+            ]
         if op == "gu":
-            return [ChangeCase(start[0], start[1], end[0], end[1], "lower")]
+            return [
+                ChangeCase(
+                    start[0],
+                    start[1],
+                    end[0],
+                    end[1],
+                    "lower",
+                    motion_fn=motion_fn,
+                    motion_count=motion_count,
+                    motion_range_type=range_type,
+                    motion_end_exclusive=motion_end_exclusive,
+                    motion_end_inclusive=motion_end_inclusive,
+                    text_object_key=text_object_key,
+                    text_object_mode=text_object_mode,
+                    linewise_count=linewise_count,
+                )
+            ]
         if op == "gU":
-            return [ChangeCase(start[0], start[1], end[0], end[1], "upper")]
+            return [
+                ChangeCase(
+                    start[0],
+                    start[1],
+                    end[0],
+                    end[1],
+                    "upper",
+                    motion_fn=motion_fn,
+                    motion_count=motion_count,
+                    motion_range_type=range_type,
+                    motion_end_exclusive=motion_end_exclusive,
+                    motion_end_inclusive=motion_end_inclusive,
+                    text_object_key=text_object_key,
+                    text_object_mode=text_object_mode,
+                    linewise_count=linewise_count,
+                )
+            ]
         return []
 
     def _resolve_linewise_operator(self, state: ParseState) -> list[Action]:
@@ -747,14 +820,26 @@ class ModalEngine:  # cm:5c8e7a
         end_line = min(line + count - 1, self._line_count - 1)
 
         if op == "d":
-            return [DeleteRange(line, 0, end_line, 0x7FFFFFFF, register=state.register, save_deleted=True)]
+            return [
+                DeleteRange(
+                    line, 0, end_line, 0x7FFFFFFF, register=state.register, save_deleted=True, linewise_count=count
+                )
+            ]
         if op == "y":
             return [YankLine(line, count, state.register)]
         if op == "c":
             return [
                 CompoundAction(
                     (
-                        DeleteRange(line, 0, end_line, 0x7FFFFFFF, register=state.register, save_deleted=True),
+                        DeleteRange(
+                            line,
+                            0,
+                            end_line,
+                            0x7FFFFFFF,
+                            register=state.register,
+                            save_deleted=True,
+                            linewise_count=count,
+                        ),
                         EnterInsertMode("cursor"),
                     ),
                     "change-line",
@@ -770,11 +855,11 @@ class ModalEngine:  # cm:5c8e7a
             self._filter_range = (line, end_line)
             return [EnterCommandMode("!")]
         if op == "g~":
-            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "toggle")]
+            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "toggle", linewise_count=count)]
         if op == "gu":
-            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "lower")]
+            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "lower", linewise_count=count)]
         if op == "gU":
-            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "upper")]
+            return [ChangeCase(line, 0, end_line, 0x7FFFFFFF, "upper", linewise_count=count)]
         return []
 
     def _resolve_multi_key(self, seq: list[str], state: ParseState) -> list[Action] | None:
@@ -793,8 +878,23 @@ class ModalEngine:  # cm:5c8e7a
 
         # gg → go to top (or line N)
         if key_str == "gg":
-            target = (state.effective_count_a() - 1) if state.count_a > 0 else 0
-            return [MoveCursor(target, 0, add_to_jumplist=True)]
+            # A line-number count for gg/G may be given before the operator (count_a,
+            # e.g. "2gg") or between the operator and gg (count_b, e.g. "d2gg") —
+            # either one picks the target line; they don't multiply together.
+            given_count = state.count_a if state.count_a > 0 else state.count_b
+            target_line = (given_count - 1) if given_count > 0 else 0
+            if state.operator is not None and self._document is not None:
+                line, col = self._cursor
+
+                def _move_gg(
+                    doc: object, line: int, col: int, count: int, _target: int = target_line
+                ) -> tuple[int, int]:
+                    return (_target, 0)
+
+                return self._resolve_operator_motion(
+                    state, (line, col), (target_line, 0), "line", motion_fn=_move_gg, motion_count=1
+                )
+            return [MoveCursor(target_line, 0, add_to_jumplist=True)]
 
         # G → already a single-key binding; wouldn't appear here normally
 
@@ -901,7 +1001,14 @@ class ModalEngine:  # cm:5c8e7a
                 return []
             sl, sc, el, ec = rng
             return self._operator_range_actions(
-                state.operator, state.register, (sl, sc), (el, ec), "char", count=state.effective_count()
+                state.operator,
+                state.register,
+                (sl, sc),
+                (el, ec),
+                "char",
+                count=state.effective_count(),
+                text_object_key=seq[1],
+                text_object_mode=obj_mode,
             )
 
         # r{char} — replace char at cursor
@@ -954,14 +1061,38 @@ class ModalEngine:  # cm:5c8e7a
                     from peovim.modal.motions import move_ge
 
                     line, col = self._cursor
-                    return [MoveCursor(*move_ge(self._document, line, col, state.effective_count()))]
+                    count = state.effective_count()
+                    new_line, new_col = move_ge(self._document, line, col, count)
+                    if state.operator is not None:
+                        return self._resolve_operator_motion(
+                            state,
+                            (line, col),
+                            (new_line, new_col),
+                            "char",
+                            motion_end_inclusive=True,
+                            motion_fn=move_ge,
+                            motion_count=count,
+                        )
+                    return [MoveCursor(new_line, new_col)]
                 return []
             if ch == "E":
                 if self._document is not None:
                     from peovim.modal.motions import move_gE
 
                     line, col = self._cursor
-                    return [MoveCursor(*move_gE(self._document, line, col, state.effective_count()))]
+                    count = state.effective_count()
+                    new_line, new_col = move_gE(self._document, line, col, count)
+                    if state.operator is not None:
+                        return self._resolve_operator_motion(
+                            state,
+                            (line, col),
+                            (new_line, new_col),
+                            "char",
+                            motion_end_inclusive=True,
+                            motion_fn=move_gE,
+                            motion_count=count,
+                        )
+                    return [MoveCursor(new_line, new_col)]
                 return []
             if ch == "I":
                 return [EnterInsertMode("col_1")]
@@ -1064,18 +1195,37 @@ class ModalEngine:  # cm:5c8e7a
             count = state.effective_count()
             if self._document is None:
                 return []
-            if seq == ["[", "("]:
-                return [MoveCursor(*move_bracket_open_paren(self._document, line, col, count))]
-            if seq == ["[", "{"]:
-                return [MoveCursor(*move_bracket_open_brace(self._document, line, col, count))]
-            if seq == ["]", ")"]:
-                return [MoveCursor(*move_bracket_close_paren(self._document, line, col, count))]
-            if seq == ["]", "}"]:
-                return [MoveCursor(*move_bracket_close_brace(self._document, line, col, count))]
-            if seq == ["[", "["]:
-                return [MoveCursor(*move_section_backward(self._document, line, col, count), add_to_jumplist=True)]
-            if seq == ["]", "]"]:
-                return [MoveCursor(*move_section_forward(self._document, line, col, count), add_to_jumplist=True)]
+
+            bracket_fns = {
+                ("[", "("): move_bracket_open_paren,
+                ("[", "{"): move_bracket_open_brace,
+                ("]", ")"): move_bracket_close_paren,
+                ("]", "}"): move_bracket_close_brace,
+            }
+            bracket_fn = bracket_fns.get((seq[0], seq[1]))
+            if bracket_fn is not None:
+                new_line, new_col = bracket_fn(self._document, line, col, count)
+                if state.operator is not None:
+                    return self._resolve_operator_motion(
+                        state,
+                        (line, col),
+                        (new_line, new_col),
+                        "char",
+                        motion_end_exclusive=True,
+                        motion_fn=bracket_fn,
+                        motion_count=count,
+                    )
+                return [MoveCursor(new_line, new_col)]
+
+            section_fns = {("[", "["): move_section_backward, ("]", "]"): move_section_forward}
+            section_fn = section_fns.get((seq[0], seq[1]))
+            if section_fn is not None:
+                new_line, new_col = section_fn(self._document, line, col, count)
+                if state.operator is not None:
+                    return self._resolve_operator_motion(
+                        state, (line, col), (new_line, new_col), "line", motion_fn=section_fn, motion_count=count
+                    )
+                return [MoveCursor(new_line, new_col, add_to_jumplist=True)]
 
         return None  # no match recognized yet
 

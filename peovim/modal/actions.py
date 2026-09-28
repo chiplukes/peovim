@@ -55,12 +55,17 @@ class DeleteRange(Action):
     end_col: int
     register: str = '"'
     save_deleted: bool = False
-    # Motion metadata for dot-repeat re-evaluation; excluded from equality/hash
+    # Range-resolution metadata for dot-repeat re-evaluation at the cursor's
+    # current position; excluded from equality/hash. At most one of
+    # motion_fn / text_object_key / linewise_count is set at a time.
     motion_fn: Any = field(default=None, compare=False, hash=False)
     motion_count: int = field(default=1, compare=False, hash=False)
     motion_range_type: str = field(default="char", compare=False, hash=False)
     motion_end_exclusive: bool = field(default=False, compare=False, hash=False)
     motion_end_inclusive: bool = field(default=False, compare=False, hash=False)
+    text_object_key: str | None = field(default=None, compare=False, hash=False)
+    text_object_mode: str | None = field(default=None, compare=False, hash=False)
+    linewise_count: int | None = field(default=None, compare=False, hash=False)
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,17 @@ class ChangeCase(Action):
     end_line: int
     end_col: int
     mode: Literal["upper", "lower", "toggle"]
+    # Range-resolution metadata for dot-repeat re-evaluation at the cursor's
+    # current position; excluded from equality/hash. At most one of
+    # motion_fn / text_object_key / linewise_count is set at a time.
+    motion_fn: Any = field(default=None, compare=False, hash=False)
+    motion_count: int = field(default=1, compare=False, hash=False)
+    motion_range_type: str = field(default="char", compare=False, hash=False)
+    motion_end_exclusive: bool = field(default=False, compare=False, hash=False)
+    motion_end_inclusive: bool = field(default=False, compare=False, hash=False)
+    text_object_key: str | None = field(default=None, compare=False, hash=False)
+    text_object_mode: str | None = field(default=None, compare=False, hash=False)
+    linewise_count: int | None = field(default=None, compare=False, hash=False)
 
 
 @dataclass(frozen=True)

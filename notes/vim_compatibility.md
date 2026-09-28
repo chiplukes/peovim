@@ -178,9 +178,19 @@ Legend: **✓ implemented** | **~ partial** | **✗ not implemented**
 **Operator shorthand (doubled = whole line):**
 `dd`, `yy`, `cc`, `>>`, `<<`, `==`, `g~~`, `guu`, `gUU`
 
-Note: `dgg` and similar operator + `gg`/section-jump combos don't yet apply
-the pending operator (`gg` always just moves the cursor) — only the doubled
-shorthand above and operator + text object (`diw`, `g~iw`, ...) are wired up.
+Operators also combine with `gg`/`G`, `ge`/`gE`, and the bracket/section
+jumps (`[(`, `[{`, `])`, `]}`, `[[`, `]]`), e.g. `dgg`, `dge`, `d[[` — same
+mechanism as any other operator + motion.
+
+**Dot-repeat (`.`)** re-resolves the range at the cursor's current position
+for `d`/`c`/`g~`/`gu`/`gU`, whether the original command was a motion
+(`g~w` → `.` toggles the next word), a text object (`g~iw`/`diw` → `.`
+re-resolves the same text object at the cursor), or doubled/linewise
+(`dd`/`g~~` → `.` acts on the current line, not the original one). `y`
+(yank) is intentionally not part of dot-repeat, matching Vim. `c`'s
+dot-repeat only replays the delete half correctly — replaying the typed
+insert text together with a re-resolved delete isn't implemented (a
+pre-existing gap, not something this covers).
 
 ---
 

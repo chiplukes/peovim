@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from peovim.modal.actions import DeleteRange, InsertText, PluginContext, RepeatLastChange, ReplaceRange, RunPlugin
+from peovim.modal.actions import (
+    ChangeCase,
+    DeleteRange,
+    InsertText,
+    PluginContext,
+    RepeatLastChange,
+    ReplaceRange,
+    RunPlugin,
+)
 
 LINE_END = 0x7FFFFFFF
 
@@ -45,31 +53,14 @@ def _rebase_repeat_action(dispatcher, action: object) -> object:
         return ReplaceRange(line, col, line, end_col, action.new_text)
 
     if isinstance(action, DeleteRange):
-        # Motion-aware repeat: re-evaluate the motion from the current cursor position
-        if action.motion_fn is not None:
-            line = cursor.line
-            col = min(cursor.col, len(document.get_line(line)))
-            new_line, new_col = action.motion_fn(document, line, col, action.motion_count)
-            # Mirror the range normalization from engine._resolve_operator_motion
-            if action.motion_range_type == "line":
-                start = (min(line, new_line), 0)
-                end = (max(line, new_line), LINE_END)
-            else:
-                start = min((line, col), (new_line, new_col))
-                end = max((line, col), (new_line, new_col))
-                if action.motion_end_exclusive and (line, col) <= (new_line, new_col):
-                    end = (new_line, new_col)
-                    line_text = document.get_line(new_line)
-                    if new_col >= max(0, len(line_text) - 1):
-                        end = (new_line, len(line_text))
-                elif action.motion_end_inclusive:
-                    line_text = document.get_line(end[0])
-                    end = (end[0], min(end[1] + 1, len(line_text)))
+        rebased = _rebase_range(action, cursor, document)
+        if rebased is not None:
+            (sl, sc, el, ec) = rebased
             return DeleteRange(
-                start[0],
-                start[1],
-                end[0],
-                end[1],
+                sl,
+                sc,
+                el,
+                ec,
                 register=action.register,
                 save_deleted=action.save_deleted,
                 motion_fn=action.motion_fn,
@@ -77,8 +68,11 @@ def _rebase_repeat_action(dispatcher, action: object) -> object:
                 motion_range_type=action.motion_range_type,
                 motion_end_exclusive=action.motion_end_exclusive,
                 motion_end_inclusive=action.motion_end_inclusive,
+                text_object_key=action.text_object_key,
+                text_object_mode=action.text_object_mode,
+                linewise_count=action.linewise_count,
             )
-        # Fixed-width fallback for non-motion deletes (x, dl, etc.)
+        # Fixed-width fallback for non-motion, non-text-object deletes (x, dl, etc.)
         if action.start_line != action.end_line or action.end_col == LINE_END:
             return action
         width = max(0, action.end_col - action.start_col)
@@ -94,6 +88,27 @@ def _rebase_repeat_action(dispatcher, action: object) -> object:
             save_deleted=action.save_deleted,
         )
 
+    if isinstance(action, ChangeCase):
+        rebased = _rebase_range(action, cursor, document)
+        if rebased is not None:
+            (sl, sc, el, ec) = rebased
+            return ChangeCase(
+                sl,
+                sc,
+                el,
+                ec,
+                action.mode,
+                motion_fn=action.motion_fn,
+                motion_count=action.motion_count,
+                motion_range_type=action.motion_range_type,
+                motion_end_exclusive=action.motion_end_exclusive,
+                motion_end_inclusive=action.motion_end_inclusive,
+                text_object_key=action.text_object_key,
+                text_object_mode=action.text_object_mode,
+                linewise_count=action.linewise_count,
+            )
+        return action
+
     if isinstance(action, InsertText):
         # Rebase insert to current cursor — the session accumulator ensures `action`
         # already holds the full typed text from the insert session.
@@ -102,3 +117,46 @@ def _rebase_repeat_action(dispatcher, action: object) -> object:
         return InsertText(line, col, action.text)
 
     return action
+
+
+def _rebase_range(action, cursor, document) -> tuple[int, int, int, int] | None:
+    """Re-derive (start_line, start_col, end_line, end_col) for `action` at the
+    current cursor, using whichever provenance it carries (text object, doubled
+    linewise operator, or motion). Returns None if `action` carries none of
+    these, so the caller can fall back to its own default behavior.
+    """
+    line = cursor.line
+    col = min(cursor.col, len(document.get_line(line)))
+
+    if action.text_object_key is not None:
+        from peovim.modal.engine import _resolve_text_object
+
+        rng = _resolve_text_object(document, line, col, action.text_object_key, action.text_object_mode)
+        if rng is None:
+            return None
+        return rng
+
+    if action.linewise_count is not None:
+        end_line = min(line + action.linewise_count - 1, document.line_count() - 1)
+        return (line, 0, end_line, LINE_END)
+
+    if action.motion_fn is not None:
+        new_line, new_col = action.motion_fn(document, line, col, action.motion_count)
+        # Mirror the range normalization from engine._resolve_operator_motion
+        if action.motion_range_type == "line":
+            start = (min(line, new_line), 0)
+            end = (max(line, new_line), LINE_END)
+        else:
+            start = min((line, col), (new_line, new_col))
+            end = max((line, col), (new_line, new_col))
+            if action.motion_end_exclusive and (line, col) <= (new_line, new_col):
+                end = (new_line, new_col)
+                line_text = document.get_line(new_line)
+                if new_col >= max(0, len(line_text) - 1):
+                    end = (new_line, len(line_text))
+            elif action.motion_end_inclusive:
+                line_text = document.get_line(end[0])
+                end = (end[0], min(end[1] + 1, len(line_text)))
+        return (start[0], start[1], end[0], end[1])
+
+    return None

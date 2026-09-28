@@ -636,3 +636,75 @@ class TestCaseOperator:
         s = EditorSession("hello world")
         s.type("gUU")
         assert s.line(0) == "HELLO WORLD"
+
+
+# ---------------------------------------------------------------------------
+# Operator + gg / ge / gE / bracket motions
+# ---------------------------------------------------------------------------
+
+
+class TestOperatorGPrefixedMotion:
+    def test_dgg_deletes_from_cursor_to_top(self):
+        s = EditorSession("a\nb\nc\nd\n")
+        s.type("jj")  # cursor -> line 2 ("c")
+        s.type("dgg")
+        assert s.text() == "d\n"
+
+    def test_dgg_with_count_deletes_down_to_line_n(self):
+        s = EditorSession("a\nb\nc\nd\n")
+        s.type("jjj")  # cursor -> line 3 ("d")
+        s.type("d2gg")  # delete from line 3 up to line 2 (1-indexed count 2 -> line index 1)
+        assert s.text() == "a\n"
+
+    def test_dge_deletes_back_to_end_of_previous_word_inclusive(self):
+        s = EditorSession("foo bar baz")
+        s.type("ww")  # cursor on "baz"
+        s.type("dge")
+        assert s.line(0) == "foo baaz"
+
+    def test_gg_without_operator_still_just_moves(self):
+        s = EditorSession("a\nb\nc\n")
+        s.type("jj")
+        s.type("gg")
+        assert s.cursor() == (0, 0)
+        assert s.text() == "a\nb\nc\n"
+
+
+# ---------------------------------------------------------------------------
+# Dot-repeat re-resolves at the cursor (text objects, motions, linewise)
+# ---------------------------------------------------------------------------
+
+
+class TestDotRepeatRerecolvesAtCursor:
+    def test_g_tilde_iw_dot_repeat_hits_word_under_new_cursor(self):
+        s = EditorSession("alpha beta gamma")
+        s.type("g~iw")
+        assert s.line(0) == "ALPHA beta gamma"
+        s.type("w.")
+        assert s.line(0) == "ALPHA BETA gamma"
+
+    def test_diw_dot_repeat_hits_word_under_new_cursor(self):
+        s = EditorSession("alpha beta gamma")
+        s.type("diw")
+        s.type("w.")
+        assert s.text() == "  gamma"
+
+    def test_g_tilde_motion_dot_repeat_hits_word_under_new_cursor(self):
+        s = EditorSession("alpha beta gamma")
+        s.type("g~w")
+        assert s.line(0) == "ALPHA beta gamma"
+        s.type("w.")
+        assert s.line(0) == "ALPHA BETA gamma"
+
+    def test_dd_dot_repeat_deletes_current_line_not_original(self):
+        s = EditorSession("one\ntwo\nthree\nfour\n")
+        s.type("dd")  # deletes "one"
+        s.type("j")  # cursor -> "three"
+        s.type(".")
+        assert s.text() == "two\nfour\n"
+
+    def test_g_tilde_g_tilde_dot_repeat_toggles_current_line(self):
+        s = EditorSession("One\nTwo\nThree\n")
+        s.type("g~~")
+        s.type("j.")
+        assert s.text() == "oNE\ntWO\nThree\n"
