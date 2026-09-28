@@ -10,7 +10,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from peovim.modal.actions import (
+    ChangeRepeat,
     CompoundAction,
+    DeleteRange,
     EnterCommandMode,
     EnterInsertMode,
     EnterNormalMode,
@@ -62,7 +64,10 @@ def handle_enter_insert_mode(d: ActionDispatcher, action: EnterInsertMode, doc: 
     elif action.position == "col_1":
         cur.move_to(cur.line, 0)
     if d._insert_session is None and d._pending_block_insert is None:
-        d._insert_session = _InsertSession(start_line=cur.line, start_col=cur.col)
+        d._insert_session = _InsertSession(
+            start_line=cur.line, start_col=cur.col, change_source=d._pending_change_source
+        )
+    d._pending_change_source = None
     d._emit_later("insert_entered", buf_id=d._buf_id)
 
 
@@ -79,7 +84,26 @@ def handle_enter_normal_mode(d: ActionDispatcher, action: EnterNormalMode, doc: 
     if d._insert_session is not None:
         sess = d._insert_session
         if sess.simple and sess.text:
-            d._dot_repeat = InsertText(sess.start_line, sess.start_col, sess.text)
+            if sess.change_source is not None:
+                src = sess.change_source
+                d._dot_repeat = ChangeRepeat(
+                    src.start_line,
+                    src.start_col,
+                    src.end_line,
+                    src.end_col,
+                    src.register,
+                    sess.text,
+                    motion_fn=src.motion_fn,
+                    motion_count=src.motion_count,
+                    motion_range_type=src.motion_range_type,
+                    motion_end_exclusive=src.motion_end_exclusive,
+                    motion_end_inclusive=src.motion_end_inclusive,
+                    text_object_key=src.text_object_key,
+                    text_object_mode=src.text_object_mode,
+                    linewise_count=src.linewise_count,
+                )
+            else:
+                d._dot_repeat = InsertText(sess.start_line, sess.start_col, sess.text)
         d._insert_session = None
     d._emit_later("mode_changed", mode="normal")
 
@@ -127,6 +151,15 @@ def handle_compound_action(d: ActionDispatcher, action: CompoundAction, doc: Doc
     # Save cursor before compound so plugin batch ops (commentary, etc.)
     # don't strand the cursor at an arbitrary intermediate position.
     saved_line, saved_col = cur.line, cur.col
+    if (
+        action.description in ("change", "change-line")
+        and action.actions
+        and isinstance(action.actions[0], DeleteRange)
+    ):
+        # Tag the delete so the EnterInsertMode right after it (still to come in
+        # this same sub-action loop) can attach it to the new _InsertSession as
+        # change_source — lets dot-repeat replay delete+insert together.
+        d._pending_change_source = action.actions[0]
     with doc.compound_edit():
         for sub in action.actions:
             d._apply(sub)

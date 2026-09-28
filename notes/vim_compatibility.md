@@ -187,10 +187,25 @@ for `d`/`c`/`g~`/`gu`/`gU`, whether the original command was a motion
 (`g~w` → `.` toggles the next word), a text object (`g~iw`/`diw` → `.`
 re-resolves the same text object at the cursor), or doubled/linewise
 (`dd`/`g~~` → `.` acts on the current line, not the original one). `y`
-(yank) is intentionally not part of dot-repeat, matching Vim. `c`'s
-dot-repeat only replays the delete half correctly — replaying the typed
-insert text together with a re-resolved delete isn't implemented (a
-pre-existing gap, not something this covers).
+(yank) is intentionally not part of dot-repeat, matching Vim.
+
+`c` (change) dot-repeat replays delete-and-insert together as one undo
+step: a simple, single-line insert session right after a change-operator
+delete (`ciw<text><Esc>`, `cw<text><Esc>`, `cc<text><Esc>`, ...) is captured
+so `.` re-resolves the same range at the cursor and retypes the same text
+there. This only covers the common case — a single-line, no-backspace
+insert session; a session that spans lines or backspaces past its start
+falls back to replaying just the delete at a fixed width, matching `d`'s
+own fallback for non-motion deletes.
+
+Known separate bug, not part of the above: `cc`/`S`-style linewise change
+doesn't open a fresh line to type into — it deletes through the line's
+trailing newline (like `dd`) and inserts the replacement text inline,
+merging it onto the following line instead of leaving it on its own line
+(e.g. `cc` typing "X" on `one`/`two` gives `Xtwo`, not `X` on its own
+line). Dot-repeat for `cc` still correctly re-targets the current line
+when repeated elsewhere — it just inherits this line-merging quirk from
+the underlying command.
 
 ---
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from peovim.modal.actions import (
     ChangeCase,
+    ChangeRepeat,
     DeleteRange,
     InsertText,
     PluginContext,
@@ -32,11 +33,65 @@ def handle_repeat_action(dispatcher, action: object) -> bool:
         dispatcher._apply(RunPlugin(dispatcher._dot_repeat.callback_id, repeat_context))
         return True
 
+    if isinstance(dispatcher._dot_repeat, ChangeRepeat):
+        _apply_change_repeat(dispatcher, dispatcher._dot_repeat)
+        return True
+
     if dispatcher._dot_repeat is not None:
         dispatcher._apply(_rebase_repeat_action(dispatcher, dispatcher._dot_repeat))
         return True
 
     return True
+
+
+def _apply_change_repeat(dispatcher, action: ChangeRepeat) -> None:
+    """Replay a `c`-operator change: re-resolve the range at the cursor, delete
+    it, and insert the originally-typed text — as one compound (single-undo) edit.
+    """
+    cursor = dispatcher.window.cursor
+    document = dispatcher.window.document
+
+    rebased = _rebase_range(action, cursor, document)
+    if rebased is not None:
+        sl, sc, el, ec = rebased
+    elif action.start_line != action.end_line or action.end_col == LINE_END:
+        # No provenance and not a simple single-line width (e.g. a Visual-mode
+        # change, which carries none of these) — replay at the exact original spot.
+        sl, sc, el, ec = action.start_line, action.start_col, action.end_line, action.end_col
+    else:
+        # Fixed-width fallback, mirroring DeleteRange's own fallback.
+        width = max(0, action.end_col - action.start_col)
+        line = cursor.line
+        col = min(cursor.col, len(document.get_line(line)))
+        sl, sc, el, ec = line, col, line, min(col + width, len(document.get_line(line)))
+
+    with document.compound_edit():
+        dispatcher._apply(DeleteRange(sl, sc, el, ec, register=action.register, save_deleted=True))
+        # Insert exactly where the deleted range started — reading the cursor
+        # back here instead would get clamped to Normal-mode bounds (no
+        # one-past-the-end column), unlike the live "c{motion}" path where this
+        # runs while still in Insert mode.
+        dispatcher._apply(InsertText(sl, sc, action.insert_text))
+
+    # The sub-dispatches above each overwrite _dot_repeat with themselves (a
+    # plain DeleteRange, then a plain InsertText) — restore it to a fresh
+    # ChangeRepeat so a further "." still redoes delete+insert together.
+    dispatcher._dot_repeat = ChangeRepeat(
+        sl,
+        sc,
+        el,
+        ec,
+        action.register,
+        action.insert_text,
+        motion_fn=action.motion_fn,
+        motion_count=action.motion_count,
+        motion_range_type=action.motion_range_type,
+        motion_end_exclusive=action.motion_end_exclusive,
+        motion_end_inclusive=action.motion_end_inclusive,
+        text_object_key=action.text_object_key,
+        text_object_mode=action.text_object_mode,
+        linewise_count=action.linewise_count,
+    )
 
 
 def _rebase_repeat_action(dispatcher, action: object) -> object:

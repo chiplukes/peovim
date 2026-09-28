@@ -128,6 +128,11 @@ class _InsertSession:
     start_col: int  # actual insertion column (after entry-mode adjustment)
     text: str = ""  # accumulated typed text
     simple: bool = True  # False if newlines/non-sequential edits make rebasing unreliable
+    # The DeleteRange this session's EnterInsertMode immediately followed, if any
+    # (set only for a change-operator compound: "c{motion}"/"c{textobj}"/"cc"/etc.)
+    # — lets dot-repeat replay this as delete-then-insert at the cursor, instead
+    # of only replaying the typed text at a fixed offset.
+    change_source: DeleteRange | None = None
 
 
 class ActionDispatcher:  # cm:7a5d8b
@@ -160,6 +165,10 @@ class ActionDispatcher:  # cm:7a5d8b
         self._insert_compound_open: bool = False  # True while insert-mode compound edit is open
         self._pending_block_insert: _PendingBlockInsert | None = None
         self._insert_session: _InsertSession | None = None  # tracks current insert session
+        # Set by handle_compound_action right before dispatching a "change"/"change-line"
+        # compound's sub-actions; consumed by handle_enter_insert_mode to tag the
+        # resulting _InsertSession.change_source. Never left set across dispatches.
+        self._pending_change_source: DeleteRange | None = None
         self.quit_requested: bool = False
         self._last_ex_command: str = ""
         self._pending_events: list[tuple[str, dict]] = []

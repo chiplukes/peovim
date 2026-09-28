@@ -508,6 +508,33 @@ class RepeatLastChange(Action):
     count: int = 1
 
 
+@dataclass(frozen=True)
+class ChangeRepeat(Action):
+    """Dot-repeat descriptor for a `c`-operator change (delete range + insert text).
+
+    Never dispatched directly by the modal engine — it only ever lives in
+    `ActionDispatcher._dot_repeat`, produced when a simple, single-line insert
+    session follows a change-operator delete. `handle_repeat_action` re-resolves
+    the range at the cursor (same provenance fields as DeleteRange/ChangeCase)
+    and replays delete-then-insert as one compound edit.
+    """
+
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    register: str
+    insert_text: str
+    motion_fn: Any = field(default=None, compare=False, hash=False)
+    motion_count: int = field(default=1, compare=False, hash=False)
+    motion_range_type: str = field(default="char", compare=False, hash=False)
+    motion_end_exclusive: bool = field(default=False, compare=False, hash=False)
+    motion_end_inclusive: bool = field(default=False, compare=False, hash=False)
+    text_object_key: str | None = field(default=None, compare=False, hash=False)
+    text_object_mode: str | None = field(default=None, compare=False, hash=False)
+    linewise_count: int | None = field(default=None, compare=False, hash=False)
+
+
 # ---------------------------------------------------------------------------
 # Marks and jump list
 # ---------------------------------------------------------------------------

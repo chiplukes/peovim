@@ -708,3 +708,60 @@ class TestDotRepeatRerecolvesAtCursor:
         s.type("g~~")
         s.type("j.")
         assert s.text() == "oNE\ntWO\nThree\n"
+
+
+# ---------------------------------------------------------------------------
+# Dot-repeat for the "c" (change) operator: replay delete+insert together
+# ---------------------------------------------------------------------------
+
+
+class TestChangeDotRepeat:
+    def test_ciw_dot_repeat_replays_delete_and_insert_at_new_word(self):
+        s = EditorSession("hello world")
+        s.type("ciwbye<Esc>")
+        assert s.line(0) == "bye world"
+        s.type("w.")
+        assert s.line(0) == "bye bye"
+
+    def test_ciw_dot_repeat_chains_across_repeated_presses(self):
+        s = EditorSession("alpha beta gamma")
+        s.type("ciwX<Esc>")
+        s.type("w.")
+        s.type("w.")
+        assert s.line(0) == "X X X"
+
+    def test_cw_motion_dot_repeat_replays_at_new_word(self):
+        s = EditorSession("foo bar baz")
+        s.type("cwXX<Esc>")
+        assert s.line(0) == "XXbar baz"
+        s.type("w.")
+        assert s.line(0) == "XXbar XX"
+
+    def test_cc_dot_repeat_replays_on_current_line(self):
+        # Note: `cc` itself has a pre-existing, separate bug where the typed
+        # replacement merges onto the following line instead of staying on its
+        # own line (not part of this fix — see notes/vim_compatibility.md).
+        # This test only pins that the dot-repeat re-targets the current line
+        # rather than the original one; it isn't asserting `cc` is fully correct.
+        s = EditorSession("one\ntwo\nthree\n")
+        s.type("ccZZZ<Esc>")
+        assert s.text() == "ZZZtwo\nthree\n"
+        s.type("j.")  # cursor -> "three" (the last line)
+        assert s.text() == "ZZZtwo\nZZZ"
+
+    def test_ciw_dot_repeat_is_one_undo_step(self):
+        s = EditorSession("alpha beta gamma")
+        s.type("ciwX<Esc>")
+        s.type("w.")
+        assert s.line(0) == "X X gamma"
+        s.type("u")
+        assert s.line(0) == "X beta gamma"
+        s.type("u")
+        assert s.line(0) == "alpha beta gamma"
+
+    def test_ciw_with_no_typed_text_dot_repeat_just_deletes(self):
+        s = EditorSession("hello world")
+        s.type("ciw<Esc>")
+        assert s.line(0) == " world"
+        s.type("w.")
+        assert s.line(0) == " "
