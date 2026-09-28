@@ -21,7 +21,15 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
     A failure *after* the temp file is created (writing to it, or the final
     `os.replace`) is not downgraded this way — that's a different, less
     predictable failure mode, and the original file is left untouched and the
-    error re-raised rather than risking a partial overwrite.
+    error re-raised rather than risking a partial overwrite. The one
+    exception is `os.replace` itself raising `FileExistsError`: on a real
+    POSIX filesystem `rename()` always atomically replaces an existing
+    destination and can never fail with EEXIST, so seeing it here means the
+    filesystem doesn't actually support atomic replace-over-an-existing-file
+    (notably GVFS's FUSE bridge for AFP/SMB network mounts). In that specific
+    case we retry once via unlink-then-replace — the temp file's contents are
+    already fully written and fsynced, so this only narrows (not removes) the
+    atomicity guarantee rather than failing the save outright.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -36,7 +44,11 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
             handle.flush()
             with contextlib.suppress(OSError):
                 os.fsync(handle.fileno())
-        os.replace(tmp_path, path)
+        try:
+            os.replace(tmp_path, path)
+        except FileExistsError:
+            os.remove(path)
+            os.replace(tmp_path, path)
     except Exception:
         with contextlib.suppress(FileNotFoundError, OSError):
             tmp_path.unlink()

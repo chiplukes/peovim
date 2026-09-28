@@ -74,7 +74,11 @@ network mounts — the file itself may still be writable), it falls back to a
 direct, non-atomic write to the target path instead of failing the save. A
 failure after the temp file is successfully created (write or the final
 rename) is not downgraded this way; the original file is left untouched and
-the error is raised.
+the error is raised — except when the final rename itself raises
+`FileExistsError`, which real POSIX `rename()` never does for an existing
+destination and is the signature of a filesystem whose atomic-replace is
+broken (GVFS's FUSE bridge for AFP/SMB mounts is a known offender); that
+case is retried once via unlink-then-rename instead of failing the save.
 
 | Store | Location | Policy |
 |---|---|---|
