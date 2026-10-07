@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from peovim.api.editor import EditorAPI
 from peovim.commands.builtin import register_builtins
 from peovim.commands.registry import CommandRegistry
@@ -48,7 +50,112 @@ def _split_with_buffer(api: EditorAPI, path: Path) -> tuple[object, object]:
     return windows[next(p for p in windows if p != path.resolve())], windows[path.resolve()]
 
 
+def _selector_api(tmp_path, *, focus=False):
+    from peovim.plugins.flash import setup
+    from peovim.ui.cell_grid import CellGrid
+
+    class Panel:
+        width = 30
+
+        def render(self, grid):
+            grid.write_str(0, 0, "content")
+
+        def feed_key(self, key):
+            return True
+
+    active = tmp_path / "active.txt"
+    active.write_text("editor text\n", encoding="utf-8")
+    api = _make_api(active)
+    api.ui.register_sidebar_panel("explorer", Panel())
+    api.ui.register_sidebar_panel("file_history", Panel())
+    api.ui.show_sidebar_panel("diagnostics", Panel(), focus=focus)
+    api.ui._sidebar.render(CellGrid(38, 12))
+    setup(api)
+    return api
+
+
 class TestFlashPlugin:
+    @pytest.mark.parametrize("query, panel_name, index", [("fi", "explorer", 0), ("hi", "file_history", 1)])
+    def test_flash_lands_on_selector_and_l_enters_selected_panel(self, tmp_path, query, panel_name, index):
+        from peovim.ui.cell_grid import CellGrid
+
+        api = _selector_api(tmp_path)
+        flash = api.flash_plugin
+        flash.start()
+        for key in query:
+            flash.feed_key(key)
+        selector = api.ui._sidebar
+        assert selector.flash_labels == {(index, 1): "a"}
+        grid = CellGrid(38, 12)
+        selector.render(grid)
+        assert grid._current[index][1][:3] == ("a", (255, 215, 0), (30, 25, 0))
+        flash.feed_key("a")
+        assert api.ui.active_sidebar_panel_name() == panel_name
+        assert selector.selector_focused
+        assert api.ui.focused_sidebar_panel_name() == "sidebar"
+        assert api.active_window().cursor == (0, 0)
+        assert not selector.flash_labels
+        assert not flash.is_active
+        selector.feed_key("l")
+        assert api.ui.focused_sidebar_panel_name() == panel_name
+
+    @pytest.mark.parametrize("selector_focus", [False, True])
+    def test_flash_selector_cancel_preserves_panel_and_focus(self, tmp_path, selector_focus):
+        api = _selector_api(tmp_path, focus=selector_focus)
+        selector = api.ui._sidebar
+        if selector_focus:
+            selector.feed_key("h")
+        flash = api.flash_plugin
+        flash.start()
+        flash.feed_key("f")
+        flash.feed_key("i")
+        assert selector.flash_labels
+        flash.feed_key("<Esc>")
+        assert not selector.flash_labels
+        assert api.ui.active_sidebar_panel_name() == "diagnostics"
+        assert selector.selector_focused == selector_focus
+        assert selector.focused == selector_focus
+
+    def test_flash_hidden_selector_and_visual_mode_exclude_selector_targets(self, tmp_path):
+        api = _selector_api(tmp_path)
+        api.ui.hide_sidebar()
+        flash = api.flash_plugin
+        flash.start()
+        flash.feed_key("f")
+        flash.feed_key("i")
+        assert not flash.is_active
+        assert not flash._labels
+        api.ui.show_active_sidebar_panel(focus=False)
+        api._dispatcher.dispatch(api._engine.feed_key("v"))
+        api._dispatcher.dispatch(api._engine.feed_key("s"))
+        flash.feed_key("f")
+        flash.feed_key("i")
+        assert not flash.is_active
+        assert api._engine.mode == Mode.VISUAL_CHAR
+        assert not api.ui._sidebar.flash_labels
+
+    def test_flash_selector_two_character_labels_share_editor_label_space(self, tmp_path):
+        from peovim.ui.cell_grid import CellGrid
+
+        api = _selector_api(tmp_path, focus=True)
+        api.active_buffer().set_lines(0, 1, ["fi " * 27])
+        api.ui._sidebar.feed_key("h")
+        flash = api.flash_plugin
+        flash.start()
+        flash.feed_key("f")
+        flash.feed_key("i")
+        selector = api.ui._sidebar
+        target_label = next(label for label, (target, _, _) in flash._labels.items() if target is selector)
+        assert len(target_label) == 2
+        flash.feed_key(target_label[0])
+        assert selector.flash_labels == {(0, 1): target_label[1]}
+        selector.render(CellGrid(38, 12))
+        flash.feed_key(target_label[1])
+        assert api.ui.active_sidebar_panel_name() == "explorer"
+        assert selector.selector_focused
+        assert not selector.flash_labels
+        assert not api._editor_state.decorations.get_for_namespace(api.active_window().win_id, "flash:labels")
+
     def test_flash_from_sidebar_focuses_editor_and_clears_two_char_labels(self, tmp_path):
         from peovim.plugins.flash import setup
         from peovim.ui.cell_grid import CellGrid
@@ -97,8 +204,8 @@ class TestFlashPlugin:
         assert tree.flash_labels == {(1, 2): "a"}
         grid = CellGrid(30, 12)
         api.ui._sidebar.render(grid)
-        assert grid._current[5][2][0] == "a"
-        assert grid._current[5][2][1] == (255, 215, 0)
+        assert grid._current[3][10][0] == "a"
+        assert grid._current[3][10][1] == (255, 215, 0)
         flash.feed_key("a")
         assert tree.selected_node.label == "target.py"
         assert api.ui.focused_sidebar_panel_name() == "explorer"

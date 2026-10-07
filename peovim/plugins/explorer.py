@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import pathlib
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -47,9 +48,14 @@ class _ExplorerSidebarPanel:
 
     _HINT = "<leader>f  file ops"
 
-    def __init__(self, tree, *, width: int = 30) -> None:
+    def __init__(self, tree, *, width: int = 30, on_show: Callable[[], None] | None = None) -> None:
         self.tree = tree
         self.width = width
+        self._on_show = on_show
+
+    def on_show(self) -> None:
+        if self._on_show is not None:
+            self._on_show()
 
     def render(self, grid: CellGrid) -> None:
         self.tree.focused = getattr(self, "_sidebar_focused", False)
@@ -94,19 +100,25 @@ class _ExplorerController:  # cm:1f4c6a
         self._pending_copy_destination_dir: pathlib.Path | None = None
         self._window_chooser: TargetChooser | None = None
 
-    def toggle(self) -> None:
-        self._root = self._api.find_root() or pathlib.Path.cwd()
-
+    def register_panel(self) -> None:
+        """Make Files available in the selector before its first opening."""
         if self._panel is None:
             from peovim.ui.tree_view import TreeView
 
             tree = TreeView(
-                _make_nodes(self._root, status_map=_combined_status_map(self._api, self._root)),
-                title="Explorer",
+                [],
+                title="Files",
                 width=30,
                 on_select=self._open_selected,
             )
-            self._panel = _ExplorerSidebarPanel(tree, width=30)
+            self._panel = _ExplorerSidebarPanel(tree, width=30, on_show=self.refresh)
+        self._api.ui.register_sidebar_panel("explorer", self._panel)
+
+    def toggle(self) -> None:
+        self._root = self._api.find_root() or pathlib.Path.cwd()
+
+        if self._panel is None:
+            self.register_panel()
             self._api.ui.show_sidebar_panel("explorer", self._panel, focus=True)
             return
 
@@ -407,6 +419,7 @@ def setup(api: EditorAPI) -> None:
     """Register explorer keybindings and commands."""
     global _controller
     _controller = _ExplorerController(api)
+    _controller.register_panel()
 
     api.keymap.define_plug("ExplorerToggle", _controller.toggle, desc="Explorer: toggle file tree")
     api.keymap.nmap("<leader>e", "<Plug>ExplorerToggle", desc="Explorer: toggle file tree")

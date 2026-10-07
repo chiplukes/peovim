@@ -225,7 +225,7 @@ class TreeView:  # cm:e3f1b4
             elif self._on_select is not None:
                 self._on_select(node)
 
-        elif key == "h":
+        elif key in ("h", "<Left>", "<BS>"):
             # Collapse current node, or jump to parent
             node, depth = visible[self._selected_idx]
             if node.expanded:

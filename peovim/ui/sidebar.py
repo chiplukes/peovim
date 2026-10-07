@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 from peovim.core.style import Color, ColorLike, Style, normalize_color
 from peovim.ui.backend import ATTR_BOLD
 from peovim.ui.cell_grid import CellGrid
-from peovim.ui.panel_host import PanelHost
+from peovim.ui.panel_host import PanelHost, _call_hook
 
 if TYPE_CHECKING:
     from peovim.syntax.themes import Theme
@@ -31,7 +31,7 @@ _UNSET = object()
 class SidebarStyle:
     background: Color = None
     header_active_fg: Color = (255, 255, 255)
-    header_active_bg: Color = (80, 100, 140)
+    header_active_bg: Color = (48, 57, 72)
     header_inactive_fg: Color = (210, 210, 210)
     header_inactive_bg: Color = (40, 44, 52)
 
@@ -83,14 +83,21 @@ class TreeSidebarPanel:
 
 
 class SidebarHost(PanelHost):  # cm:c4f5d1
-    """Vertical sidebar host: panel headers + body + footer, width-constrained."""
+    """Narrow panel selector beside a full-height content pane."""
 
     _RESIZE_STEP = 5
+    SELECTOR_WIDTH = 7
+    CONTENT_LEFT = SELECTOR_WIDTH + 1
 
     def __init__(self, default_width: int = 30) -> None:
         super().__init__()
         self._width = default_width
         self._style = SidebarStyle()
+        self._selector_focused = False
+        self._selector_scroll = 0
+        self._selector_height = 0
+        self._selector_width = 0
+        self.flash_labels: dict[tuple[int, int], str] = {}
         self.blink_on: bool = True  # toggled by EventLoopRuntimeController._tick_sidebar_blink
 
         # Sidebar-local key bindings: key → plug_name (consulted while focused).
@@ -162,29 +169,123 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
             self._style.header_inactive_bg = normalize_color(cast(ColorLike, header_inactive_bg))
         return self._style
 
+    @property
+    def selector_focused(self) -> bool:
+        return self.focused and self._selector_focused
+
+    def focus_selector(self) -> None:
+        if not self.focused:
+            self.focus()
+        if not self._selector_focused:
+            _call_hook(self.active_panel, "on_blur")
+            self._selector_focused = True
+
+    def flash_matches(self, query: str) -> list[tuple[int, int]]:
+        """Find matches in selector labels within the last rendered viewport."""
+        if not self.visible or not query:
+            return []
+        matches = []
+        names = self.list_panels()
+        end = self._selector_scroll + self._selector_height
+        for index in range(self._selector_scroll, min(end, len(names))):
+            text = (" " + _format_panel_label(names[index]))[: self._selector_width].lower()
+            col = 1
+            while (col := text.find(query.lower(), col)) >= 0:
+                matches.append((index, col))
+                col += 1
+        return matches
+
+    def flash_select(self, index: int) -> None:
+        """Select a panel and leave focus in the selector."""
+        names = self.list_panels()
+        if self.visible and 0 <= index < len(names):
+            self.focus_selector()
+            old = self.active_panel
+            self._active_tab = names[index]
+            self._fire_tab_change(old, self.active_panel)
+
+    def focus(self) -> None:
+        if self._selector_focused:
+            self._selector_focused = False
+            if self.focused:
+                _call_hook(self.active_panel, "on_focus")
+        super().focus()
+
+    def _do_focus(self) -> None:
+        if self._selector_focused:
+            self._focused = True
+        else:
+            super()._do_focus()
+
+    def _do_blur(self) -> None:
+        if self._selector_focused:
+            self._focused = False
+        else:
+            super()._do_blur()
+
+    def hide(self) -> None:
+        if self._selector_focused:
+            self._focused = False
+        super().hide()
+        self._selector_focused = False
+
+    def show_tab(self, name: str, content: Any = None, *, focus: bool = True) -> Any:
+        if focus and self._selector_focused:
+            self.focus()
+        return super().show_tab(name, content, focus=focus)
+
+    def _fire_tab_change(self, old: Any, new: Any) -> None:
+        focused = self._focused
+        if self._selector_focused:
+            self._focused = False
+        try:
+            super()._fire_tab_change(old, new)
+        finally:
+            self._focused = focused
+
+    def feed_key(self, key: str) -> bool:
+        if not self.focused:
+            return False
+        if key == "h":
+            self.focus_selector()
+            return True
+        if self._selector_focused:
+            if key in ("j", "<Down>"):
+                self.next_panel()
+                return True
+            if key in ("k", "<Up>"):
+                self.prev_panel()
+                return True
+            if key in ("l", "<Right>", "<CR>"):
+                self.focus()
+                return True
+            if key not in self._key_to_plug:
+                return True
+        return super().feed_key(key)
+
     def click(self, row: int, col: int) -> bool:
         if not self.visible:
             return False
-        names = self.list_panels()
-        if 0 <= row < len(names):
-            name = names[row]
-            panel = self.get_tab(name)
-            if panel is None:
-                return False
-            self.show_panel(name, panel, focus=True)
+        if col < self.SELECTOR_WIDTH:
+            names = self.list_panels()
+            index = row + self._selector_scroll
+            self.focus_selector()
+            if 0 <= index < len(names):
+                self.flash_select(index)
             return True
-
-        panel = self.active_panel
-        body_row = row - len(names) - 1
-        if body_row >= 0 and panel is not None and hasattr(panel, "click"):
-            self.focus()
-            return bool(panel.click(body_row, col))
-
         self.focus()
+        panel = self.active_panel
+        if col >= self.CONTENT_LEFT and panel is not None and hasattr(panel, "click"):
+            return bool(panel.click(row, col - self.CONTENT_LEFT))
         return True
 
     def show_active_panel(self, *, focus: bool = True) -> SidebarPanel | None:
         return self.show_active_tab(focus=focus)  # type: ignore[return-value]
+
+    def show_active_tab(self, *, focus: bool = True) -> Any:
+        if self._active_tab is None and "explorer" in self._tabs:
+            return self.show_tab("explorer", focus=focus)
+        return super().show_active_tab(focus=focus)
 
     def is_visible(self, name: str | None = None) -> bool:
         if not self.visible:
@@ -227,7 +328,7 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
             return 0
         panel_width = max(10, int(getattr(panel, "width", self._width)))
         max_sidebar = max(10, total_cols - 20)
-        return max(10, min(panel_width, max_sidebar))
+        return max(10, min(panel_width + self.CONTENT_LEFT, max_sidebar))
 
     def _builtin_plugs(self) -> dict[str, Any]:
         return {
@@ -236,25 +337,9 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
             "SidebarGrow": lambda: self._adjust_width(self._RESIZE_STEP),
         }
 
-    def _get_nav_key(self, plug_name: str, fallback: str) -> str:
-        """Return the first key bound to <Plug>plug_name, formatted for display."""
-        registry = self._binding_registry
-        if registry is None:
-            return fallback
-        keys = registry.find_keys_for_plug(plug_name, mode="normal")
-        if not keys:
-            return fallback
-        k = keys[0]
-        return k[1:-1] if k.startswith("<") and k.endswith(">") else k
-
-    def _get_footer_lines(self) -> list[str]:
-        """Return a minimal footer pointing at the leader (which-key) menu."""
-        fr = self._get_nav_key("SidebarFocusRight", "A-l")
-        return [f"<leader> keys    {fr} back"]
-
     def _adjust_width(self, delta: int) -> None:
         panel = self.active_panel
-        new_width = max(10, self._width + delta)
+        new_width = max(10, int(getattr(panel, "width", self._width)) + delta)
         self._width = new_width
         if panel is not None:
             panel.width = new_width
@@ -267,98 +352,67 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         default_fg: tuple[int, int, int] | None = None,
         default_bg: tuple[int, int, int] | None = None,
     ) -> bool:
-        if not self.visible:
+        if not self.visible or self.active_panel is None:
             return False
         panel = self.active_panel
-        if panel is None:
-            return False
         body_fg = cast(Color, theme.default_fg if theme is not None else default_fg)
         body_bg = self._resolve_sidebar_background(theme, default_bg)
-        header_rows = self._header_row_count(grid.height)
-        self._render_panel_headers(grid, theme=theme, default_fg=body_fg, default_bg=body_bg, active_only=False)
-        body_top = header_rows
-        if grid.height > header_rows + 1:
-            self._render_body_separator(
-                grid,
-                row=header_rows,
-                theme=theme,
-                default_fg=body_fg,
-                default_bg=body_bg,
+        for row in range(grid.height):
+            grid.fill(row, 0, grid.width, fg=body_fg, bg=body_bg)
+        names = self.list_panels()
+        if names and grid.height > 0:
+            selected = names.index(self._active_tab) if self._active_tab in names else 0
+            self._selector_scroll = min(self._selector_scroll, max(0, len(names) - grid.height))
+            if selected < self._selector_scroll:
+                self._selector_scroll = selected
+            elif selected >= self._selector_scroll + grid.height:
+                self._selector_scroll = selected - grid.height + 1
+        selector_width = min(self.SELECTOR_WIDTH, grid.width)
+        self._selector_height = grid.height
+        self._selector_width = selector_width
+        for row, name in enumerate(names[self._selector_scroll : self._selector_scroll + grid.height]):
+            active = name == self._active_tab
+            fg, bg, attrs = self._resolve_header_style(theme, is_active=active, default_fg=body_fg, default_bg=body_bg)
+            if not active:
+                bg = body_bg
+            if active and self.selector_focused:
+                attrs |= ATTR_BOLD
+            grid.write_padded(
+                row,
+                0,
+                ("›" if active and self.selector_focused else " ") + _format_panel_label(name),
+                selector_width,
+                fg=fg,
+                bg=bg,
+                attrs=attrs,
             )
-            body_top += 1
-
-        if grid.height <= body_top:
-            grid.apply_default_style(fg=body_fg, bg=body_bg)
-            return True
-
-        footer_height = len(self._get_footer_lines())
-        available = grid.height - body_top
-        panel_height = available - footer_height
-
-        if panel_height > 0:
-            body = CellGrid(grid.width, panel_height)
-            # Push focus state and blink phase into panel so tree-based panels can blink.
-            panel._sidebar_focused = self._focused  # type: ignore[attr-defined]
-            panel._sidebar_blink_on = self.blink_on if self._focused else True  # type: ignore[attr-defined]
+        for (index, col), label in self.flash_labels.items():
+            row = index - self._selector_scroll
+            if 0 <= row < grid.height and 0 <= col < selector_width:
+                grid.write_str(row, col, label, fg=(255, 215, 0), bg=(30, 25, 0))
+        if grid.width > self.SELECTOR_WIDTH:
+            for row in range(grid.height):
+                grid.write_str(row, self.SELECTOR_WIDTH, "│", fg=self._style.header_inactive_fg, bg=body_bg)
+        content_width = grid.width - self.CONTENT_LEFT
+        if content_width > 0 and grid.height > 0:
+            body = CellGrid(content_width, grid.height)
+            panel._sidebar_focused = self.focused and not self._selector_focused  # type: ignore[attr-defined]
+            panel._sidebar_blink_on = self.blink_on if panel._sidebar_focused else True  # type: ignore[attr-defined]
             panel.render(body)
             body.apply_default_style(fg=body_fg, bg=body_bg)
-            grid.blit(body, 0, body_top)
-
-        footer_start = body_top + max(0, panel_height)
-        self._render_footer(grid, start_row=footer_start, default_bg=body_bg)
+            grid.blit(body, self.CONTENT_LEFT, 0)
         grid.apply_default_style(fg=body_fg, bg=body_bg)
         return True
 
     def cursor_row(self, grid_height: int) -> int | None:
-        """Return the sidebar-grid-local row where the terminal cursor should sit, or *None*."""
-        panel = self.active_panel
-        if panel is None:
+        if self.selector_focused:
+            names = self.list_panels()
+            if self._active_tab in names:
+                row = names.index(self._active_tab) - self._selector_scroll
+                return row if 0 <= row < grid_height else None
             return None
-        fn = getattr(panel, "cursor_row", None)
-        if not callable(fn):
-            return None
-        header_rows = self._header_row_count(grid_height)
-        body_top = header_rows + (1 if grid_height > header_rows + 1 else 0)
-        panel_height = max(0, grid_height - body_top - len(self._get_footer_lines()))
-        if panel_height <= 0:
-            return None
-        panel_row = fn(panel_height)
-        if panel_row is None:
-            return None
-        return body_top + panel_row
-
-    def _header_row_count(self, total_rows: int) -> int:
-        return min(len(self.list_panels()), total_rows)
-
-    def _render_panel_headers(
-        self,
-        grid: CellGrid,
-        *,
-        theme: Theme | None,
-        default_fg: Color,
-        default_bg: Color,
-        active_only: bool,
-    ) -> None:
-        for row in range(grid.height):
-            grid.fill(row, 0, grid.width, bg=default_bg)
-
-        names = self.list_panels()
-        for index, name in enumerate(names):
-            if index >= grid.height:
-                break
-            is_active = name == self._active_tab
-            if active_only and not is_active:
-                continue
-            label = _format_panel_label(name)
-            marker = "▼" if is_active else "▶"
-            fg, bg, attrs = self._resolve_header_style(
-                theme,
-                is_active=is_active,
-                default_fg=default_fg,
-                default_bg=default_bg,
-            )
-            text = f" {marker} {label}"
-            grid.write_padded(index, 0, text, grid.width, fg=fg, bg=bg, attrs=attrs)
+        fn = getattr(self.active_panel, "cursor_row", None)
+        return fn(grid_height) if callable(fn) else None
 
     def _resolve_sidebar_background(self, theme: Theme | None, default_bg: Color) -> Color:
         if self._style.background is not None:
@@ -394,31 +448,22 @@ class SidebarHost(PanelHost):  # cm:c4f5d1
         attrs = theme_style.attrs if theme_style.attrs else (ATTR_BOLD if is_active else 0)
         return fg, bg, attrs
 
-    def _render_footer(self, grid: CellGrid, *, start_row: int, default_bg: Color) -> None:
-        for i, line in enumerate(self._get_footer_lines()):
-            row = start_row + i
-            if row >= grid.height:
-                break
-            fg = (180, 180, 200) if i == 0 else (140, 140, 160)
-            text = line[: grid.width].ljust(grid.width)
-            grid.write_str(row, 0, text, fg=fg, bg=default_bg)
 
-    def _render_body_separator(
-        self,
-        grid: CellGrid,
-        *,
-        row: int,
-        theme: Theme | None,
-        default_fg: Color,
-        default_bg: Color,
-    ) -> None:
-        if not (0 <= row < grid.height):
-            return
-        separator_style = theme.resolve("sidebar.header.inactive") if theme else Style()
-        fg = separator_style.fg if separator_style.fg is not None else self._style.header_inactive_fg or default_fg
-        bg = separator_style.bg if separator_style.bg is not None else default_bg
-        grid.write_padded(row, 0, "─" * max(1, grid.width), grid.width, fg=fg, bg=bg)
+_PANEL_LABELS = {
+    "explorer": "file",
+    "git-status": "git",
+    "svn-status": "svn",
+    "diagnostics": "diag",
+    "outline": "oline",
+    "references": "ref",
+    "workspace-symbols": "sym",
+    "file_history": "hist",
+    "local-history": "local",
+    "verilog_hierarchy": "vlog",
+    "codemap": "cmap",
+    "markers": "mark",
+}
 
 
 def _format_panel_label(name: str) -> str:
-    return name.replace("-", " ")
+    return _PANEL_LABELS.get(name, name.replace("-", " ").replace("_", " ")[:5])

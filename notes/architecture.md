@@ -527,7 +527,7 @@ Key design points:
 - Sidebar focus is a UI-level concern separate from which editor window is the
     active split.
 
-`SidebarHost` adds: `_width`, `_style` (SidebarStyle), `blink_on`, multi-section rendering (accordion headers + body + footer), `cursor_row()` for terminal cursor positioning, and `reserved_width()`.
+`SidebarHost` adds: `_width`, `_style` (SidebarStyle), `blink_on`, a seven-column panel selector and divider beside full-height content, `cursor_row()` for terminal cursor positioning, and `reserved_width()`.
 
 - `SidebarPanel` is a small rendering/input protocol that plugins can satisfy.
 - `TreeSidebarPanel` adapts the existing `TreeView` widget into the host.
@@ -573,8 +573,9 @@ While the sidebar is focused, `presentation_controller._sidebar_should_route_to_
 
 `MouseDispatcher` routes clicks inside the sidebar rect to `SidebarHost.click(row, col)` using panel-local coordinates:
 
-- Rows `0..len(panels)-1` are the accordion headers: clicking one shows that panel (with focus).
-- The body (below the separator) is forwarded to the active panel's `click(body_row, col)` when defined; otherwise the click only focuses the sidebar.
+- Columns `0..6` form the scrolling panel selector: clicking a label switches panels and focuses the selector. `h` moves to the selector, `j/k` cycles panels, and `l` returns to content.
+- Column `7` is a vertical divider. Content begins at column `8`, row `0` and uses the full sidebar height; clicks are forwarded as `click(row, col - 8)` when defined.
+- Panel width means content width; `reserved_width()` adds eight columns for the selector and divider, subject to terminal size. Active panel labels stay highlighted; selector focus adds a `›` marker.
 
 Tree-backed panels implement `click` by delegating to `TreeView.click(row, col)` (`peovim/ui/tree_view.py`), which maps the row to a visible node (title row and scroll offset aware), selects it, then toggles expansion when the node has children or invokes `on_select` otherwise — the same semantics as `<CR>`. Panels that render extra rows offset accordingly (explorer and markers reserve row 0 for a hint bar; the verilog hierarchy panel ignores the separator/help rows). All built-in sidebar panels (explorer, git status, svn status, outline, references, workspace symbols, diagnostics, markers, file history, verilog hierarchy) support item clicks.
 

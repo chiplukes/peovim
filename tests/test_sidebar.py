@@ -76,6 +76,100 @@ class _ThemeDefaultPanel:
 
 
 class TestSidebarHost:
+    def test_selector_flash_matches_only_visible_short_labels(self):
+        host = SidebarHost()
+        host.register_panel("git-status", _DummyPanel())
+        host.register_panel("file_history", _DummyPanel())
+        host.show_panel("explorer", _DummyPanel(), focus=True)
+        host.render(CellGrid(38, 2))
+        assert host.flash_matches("fi") == [(2, 1)]
+        assert host.flash_matches("HI") == [(1, 1)]
+        assert host.flash_matches("gi") == []
+        assert host.flash_matches("ex") == []
+        host.render(CellGrid(2, 2))
+        assert host.flash_matches("fi") == []
+        host.hide()
+        assert host.flash_matches("hi") == []
+
+    def test_h_j_k_l_moves_between_selector_and_panel_without_forwarding_selector_keys(self):
+        host = SidebarHost()
+        first = _DummyPanel()
+        second = _DummyPanel()
+        host.register_panel("explorer", first)
+        host.register_panel("diagnostics", second)
+        host.show_panel("explorer", first, focus=True)
+        host.feed_key("h")
+        assert host.selector_focused
+        host.feed_key("j")
+        assert host.active_panel_name == "diagnostics"
+        host.feed_key("k")
+        assert host.active_panel_name == "explorer"
+        host.feed_key("k")
+        assert host.active_panel_name == "diagnostics"
+        assert host.selector_focused
+        assert first.keys == second.keys == []
+        host.feed_key("l")
+        assert not host.selector_focused
+        host.feed_key("j")
+        assert second.keys == ["j"]
+
+    def test_selector_blurs_tree_until_content_is_focused(self):
+        host = SidebarHost()
+        tree = TreeView([TreeNode("file.py")])
+        panel = TreeSidebarPanel(tree)
+        host.show_panel("explorer", panel, focus=True)
+        host.feed_key("h")
+        host.render(CellGrid(38, 12))
+        assert not tree.focused
+        host.feed_key("l")
+        host.render(CellGrid(38, 12))
+        assert tree.focused
+
+    def test_left_arrow_collapses_tree_while_h_focuses_selector(self):
+        folder = TreeNode("folder", children_fn=lambda: [TreeNode("file")], expanded=True)
+        tree = TreeView([folder])
+        host = SidebarHost()
+        host.show_panel("explorer", TreeSidebarPanel(tree), focus=True)
+        host.feed_key("h")
+        assert folder.expanded
+        host.feed_key("l")
+        host.feed_key("<Left>")
+        assert not folder.expanded
+        assert not host.selector_focused
+
+    def test_selector_scrolls_to_active_panel_and_mouse_uses_scroll_offset(self):
+        host = SidebarHost()
+        for index in range(12):
+            host.register_panel(f"panel{index}", _DummyPanel())
+        host.show_panel("panel0", host.get_panel("panel0"), focus=True)
+        host.feed_key("h")
+        for _ in range(10):
+            host.feed_key("j")
+        host.render(CellGrid(32, 4))
+        assert host.cursor_row(4) == 3
+        assert host._selector_scroll == 7
+        host.click(0, 1)
+        assert host.active_panel_name == "panel7"
+        assert host.selector_focused
+
+    def test_selector_labels_and_full_content_height(self):
+        from peovim.ui.sidebar import _format_panel_label
+
+        assert _format_panel_label("explorer") == "file"
+        assert _format_panel_label("verilog_hierarchy") == "vlog"
+        assert _format_panel_label("file_history") == "hist"
+        host = SidebarHost()
+
+        class FullHeightPanel(_DummyPanel):
+            def render(self, grid):
+                grid.write_str(grid.height - 1, 0, "last")
+
+        host.show_panel("explorer", FullHeightPanel(), focus=True)
+        grid = CellGrid(32, 4)
+        host.render(grid)
+        assert "".join(cell[0] for cell in grid._current[3][8:12]) == "last"
+        assert "".join(cell[0] for cell in grid._current[0][:7]).strip() == "file"
+
     def test_show_panel_tracks_visibility_and_focus(self):
         host = SidebarHost()
         panel = _DummyPanel(width=22)
@@ -85,7 +179,7 @@ class TestSidebarHost:
         assert host.visible
         assert host.focused
         assert host.active_panel_name == "nav"
-        assert host.reserved_width(80) == 22
+        assert host.reserved_width(80) == 30
 
     def test_toggle_panel_hides_then_reopens(self):
         host = SidebarHost()
@@ -113,7 +207,38 @@ class TestSidebarHost:
         assert host.visible
         assert host.active_panel_name == "outline"
 
-    def test_click_header_selects_panel_and_focuses_sidebar(self):
+    def test_first_open_defaults_to_explorer_regardless_of_registration_order(self):
+        host = SidebarHost()
+        git = _DummyPanel()
+        files = _DummyPanel()
+        host.register_panel("git-status", git)
+        host.register_panel("explorer", files)
+        host.register_panel("diagnostics", _DummyPanel())
+
+        assert not host.visible
+        assert host.show_active_panel(focus=True) is files
+        assert host.active_panel_name == "explorer"
+        assert host.focused
+
+    def test_initial_toggle_defaults_to_explorer_with_unified_registration(self):
+        host = SidebarHost()
+        host.register_tab("git-status", _DummyPanel())
+        host.register_tab("explorer", _DummyPanel())
+
+        assert host.toggle(focus=False)
+        assert host.active_panel_name == "explorer"
+        assert not host.focused
+
+    def test_default_falls_back_to_first_panel_without_explorer(self):
+        host = SidebarHost()
+        first = _DummyPanel()
+        host.register_panel("git-status", first)
+        host.register_panel("diagnostics", _DummyPanel())
+
+        assert host.show_active_panel(focus=False) is first
+        assert host.active_panel_name == "git-status"
+
+    def test_click_selector_selects_panel_and_focuses_selector(self):
         host = SidebarHost()
         first = _DummyPanel()
         second = _DummyPanel()
@@ -138,8 +263,8 @@ class TestSidebarHost:
         host.register_panel("git-status", _DummyPanel())
         host.show_panel("explorer", panel, focus=False)
 
-        # rows 0-1 = headers, row 2 = separator, row 3 = first body row
-        assert host.click(3, 4)
+        # Content starts at column 8 and row 0.
+        assert host.click(0, 12)
         assert clicks == [(0, 4)]
         assert host.focused
 
@@ -151,8 +276,8 @@ class TestSidebarHost:
         panel = TreeSidebarPanel(tree, width=20)
         host.show_panel("explorer", panel, focus=False)
 
-        # row 0 = header, row 1 = separator, row 2 = tree title, row 3 = first node
-        assert host.click(3, 0)
+        # row 0 = tree title, row 1 = first node
+        assert host.click(1, 8)
         assert folder.expanded
         assert host.focused
 
@@ -173,18 +298,6 @@ class TestSidebarHost:
 
         assert host.feed_key("<Esc>")
         assert not host.visible
-
-    def test_footer_is_minimal_leader_pointer(self):
-        loop, _workspace = _make_event_loop(cols=80, rows=24)
-        host = SidebarHost()
-        host.show_panel("nav", _DummyPanel(width=20), focus=False)
-        host._binding_registry = loop._binding_registry
-
-        lines = host._get_footer_lines()
-
-        assert len(lines) == 1
-        assert "<leader>" in lines[0]
-        assert "A-l" in lines[0]
 
     def test_register_and_list_panels_preserve_order(self):
         host = SidebarHost()
@@ -207,40 +320,34 @@ class TestSidebarHost:
         host.prev_panel(focus=True)
         assert host.active_panel_name == "explorer"
 
-    def test_render_adds_accordion_headers_above_expanded_body(self):
+    def test_render_places_short_selector_labels_beside_full_height_content(self):
         host = SidebarHost()
         panel = _DummyPanel(width=22)
-        # Need enough rows for: 2 headers + separator + panel body + 1-line footer
-        grid = CellGrid(22, 12)
+        grid = CellGrid(30, 12)
         host.register_panel("git-status", _DummyPanel(width=22))
-
         host.show_panel("outline", panel, focus=True)
-
         assert host.render(grid)
-        first_header = "".join(grid._current[0][col][0] for col in range(grid.width))
-        second_header = "".join(grid._current[1][col][0] for col in range(grid.width))
-        separator = "".join(grid._current[2][col][0] for col in range(grid.width))
-        body = "".join(grid._current[3][col][0] for col in range(grid.width))
-        assert "git status" in first_header
-        assert "outline" in second_header
-        assert "▼" in second_header
-        assert "─" in separator
-        assert body.startswith("Sidebar")
+        first = "".join(cell[0] for cell in grid._current[0])
+        second = "".join(cell[0] for cell in grid._current[1])
+        assert first.startswith(" git   │Sidebar")
+        assert second.startswith(" oline │")
+        assert grid._current[1][0][2] != grid._current[0][0][2]
+        assert grid._current[-1][7][0] == "│"
         assert panel.rendered_widths == [22]
 
     def test_render_applies_theme_defaults_to_panel_body_cells(self):
         host = SidebarHost()
         panel = _ThemeDefaultPanel(width=12)
-        # Need enough rows for: header + separator + panel body + 1-line footer
+        # Content uses the full height beside the selector.
         grid = CellGrid(12, 10)
         theme = Theme(name="test", groups={}, default_fg=(200, 200, 200), default_bg=(31, 31, 31))
 
         host.show_panel("outline", panel, focus=False)
 
         assert host.render(grid, theme=theme)
-        assert grid._current[2][0][1] == (200, 200, 200)
-        assert grid._current[2][0][2] == (31, 31, 31)
-        assert grid._current[2][6][2] == (31, 31, 31)
+        assert grid._current[0][8][1] == (200, 200, 200)
+        assert grid._current[0][8][2] == (31, 31, 31)
+        assert grid._current[0][10][2] == (31, 31, 31)
 
     def test_render_uses_configured_sidebar_background_override(self):
         host = SidebarHost()
@@ -252,8 +359,8 @@ class TestSidebarHost:
         host.show_panel("outline", panel, focus=False)
 
         assert host.render(grid, theme=theme)
-        assert grid._current[2][0][2] == (37, 37, 38)
-        assert grid._current[2][6][2] == (37, 37, 38)
+        assert grid._current[0][8][2] == (37, 37, 38)
+        assert grid._current[0][10][2] == (37, 37, 38)
 
     def test_render_uses_theme_sidebar_header_groups(self):
         host = SidebarHost()
@@ -275,7 +382,7 @@ class TestSidebarHost:
         assert grid._current[0][0][1] == (17, 17, 17)
         assert grid._current[0][0][2] == (34, 51, 68)
         assert grid._current[1][0][1] == (85, 102, 119)
-        assert grid._current[1][0][2] == (136, 153, 170)
+        assert grid._current[1][0][2] == (31, 31, 31)
 
 
 class TestTreeSidebarPanel:
@@ -304,9 +411,9 @@ class TestEventLoopSidebarLayout:
 
         leaf = workspace.active_tab.root
         assert sidebar_rect is not None
-        assert sidebar_rect.width == 20
-        assert layout[leaf].x == 21
-        assert any(sep.x == 20 and sep.width == 1 for sep in separators)
+        assert sidebar_rect.width == 28
+        assert layout[leaf].x == 29
+        assert any(sep.x == 28 and sep.width == 1 for sep in separators)
 
     def test_alt_h_is_not_intercepted_when_sidebar_is_visible_but_not_focused(self):
         loop, _workspace = _make_event_loop(cols=80, rows=24)

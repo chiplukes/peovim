@@ -150,9 +150,22 @@ one shows + focuses it.
 
 | Key | Action |
 |-----|--------|
+| `h` | Move from panel content to the left panel selector |
+| `j` / `k` | In the selector, show the next / previous panel |
+| `l` / `<CR>` | Move from the selector into the displayed panel |
+| `<Left>` / `<BS>` | In tree content, collapse a node or move to its parent |
 | `[` | Shrink sidebar width |
 | `]` | Grow sidebar width |
 | `q` / `<Esc>` | Close sidebar |
+
+The sidebar has a narrow left selector (`git`, `svn`, `diag`, `oline`, `ref`,
+`sym`, `hist`, `local`, `vlog`, `file`, etc.) beside a full-height content pane.
+The active selector label stays highlighted; a `›` marks selector focus.
+`file` is Explorer, `hist` is file history, and `local` is local history.
+The selector scrolls when the terminal is too short to show every registered
+panel. It adds eight columns to the panel's requested content width.
+The first sidebar opening defaults to `file` when Explorer is available;
+later openings restore the last selected panel.
 
 Leader keymaps keep working while the sidebar is focused: pressing the leader
 (or continuing a pending leader prefix) routes to the engine, so `<leader>w*`
@@ -680,10 +693,13 @@ Requires `peovim.plugins.flash`.
 |-----|---------|------|--------|
 | `s` | `FlashJump` | Normal, Visual | Type 2 chars, press jump label |
 
-In Normal mode, Flash searches visible editor text and the visible entries in a
-tree-backed sidebar (including Explorer). Jumping to a sidebar entry focuses and
-selects it; press Enter to open it or expand a directory. Flash also works when
-started from the sidebar. Visual-mode jumps stay within the current editor window.
+In Normal mode, Flash searches visible editor text, visible entries in a
+tree-backed sidebar (including Explorer), and visible panel selector labels.
+For example, `sfi` labels `file`, and `shi` labels `hist`; press the displayed
+label to switch to that panel and focus its selector. Press `l` to enter the
+panel. Jumping to a sidebar content entry focuses and selects it; press Enter
+to open it or expand a directory. Flash also works when started from the sidebar
+or its selector. Visual-mode jumps stay within the current editor window.
 
 ---
 

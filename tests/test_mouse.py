@@ -242,8 +242,8 @@ class TestMouseDispatcher:
             sidebar_rect=Rect(0, 0, 20, 22),
         )
 
-        # row 0 = panel header, row 1 = separator, row 2 = tree title, row 3 = folder node
-        event = MouseEvent(row=3, col=2, button=0, pressed=True)
+        # row 0 = tree title, row 1 = folder node; column 8 starts content
+        event = MouseEvent(row=1, col=10, button=0, pressed=True)
         md.handle(event)
 
         assert folder.expanded

@@ -58,6 +58,7 @@ class FlashPlugin:  # cm:4d1b6e
         self._resume_visual_scroll: int | None = None
         self._resume_visual_window: Any = None
         self._sidebar_tree: Any = None
+        self._sidebar_selector: Any = None
 
     @property
     def is_active(self) -> bool:
@@ -71,6 +72,7 @@ class FlashPlugin:  # cm:4d1b6e
         self._labels.clear()
         self._label_prefix = ""
         self._sidebar_tree = self._api.ui.sidebar_flash_tree()
+        self._sidebar_selector = self._api.ui.sidebar_flash_selector()
         self._api.set_status("flash> ", notify=False)
 
     def feed_key(self, key: str) -> bool:
@@ -155,6 +157,10 @@ class FlashPlugin:  # cm:4d1b6e
                     search_col = idx + 1
         if self._resume_visual_window is None and self._sidebar_tree is not None:
             matches.extend((self._sidebar_tree, index, col) for index, col in self._sidebar_tree.flash_matches(query))
+        if self._resume_visual_window is None and self._sidebar_selector is not None:
+            matches.extend(
+                (self._sidebar_selector, index, col) for index, col in self._sidebar_selector.flash_matches(query)
+            )
         return matches
 
     def _compute_matches(self) -> None:
@@ -177,7 +183,7 @@ class FlashPlugin:  # cm:4d1b6e
                 break
             label = label_list[i]
             self._labels[label] = (win, ln, col)
-            if win is self._sidebar_tree:
+            if win is self._sidebar_tree or win is self._sidebar_selector:
                 win.flash_labels[(ln, col)] = label[0]
                 continue
             self._api.add_window_overlay(
@@ -194,7 +200,7 @@ class FlashPlugin:  # cm:4d1b6e
         sublabel_style = Style(fg=(255, 140, 0), bg=(40, 20, 0))
         for full_label, (win, ln, col) in remaining.items():
             second_char = full_label[1] if len(full_label) > 1 else full_label[0]
-            if win is self._sidebar_tree:
+            if win is self._sidebar_tree or win is self._sidebar_selector:
                 win.flash_labels[(ln, col)] = second_char
                 continue
             self._api.add_window_overlay(
@@ -210,11 +216,15 @@ class FlashPlugin:  # cm:4d1b6e
             self._api.clear_window_namespace(win, "flash:labels")
         if self._sidebar_tree is not None:
             self._sidebar_tree.flash_labels.clear()
+        if self._sidebar_selector is not None:
+            self._sidebar_selector.flash_labels.clear()
 
     def _jump(self, label: str) -> None:
         win, line, col = self._labels[label]
         self._api.record_jump()
-        if win is self._sidebar_tree:
+        if win is self._sidebar_selector:
+            win.flash_select(line)
+        elif win is self._sidebar_tree:
             win.flash_select(line)
             self._api.ui.focus_sidebar()
         elif self._resume_visual_mode is not None:

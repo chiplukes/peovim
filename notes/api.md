@@ -1288,7 +1288,7 @@ Default keybindings inside the tree view:
 
 #### Dockable panels (sidebar and bottom)
 
-Both the sidebar and bottom panel are instances of `PanelHost` and support the same content protocol: `render(grid: CellGrid) -> None`, `feed_key(key: str) -> bool`.  Optional attributes (`title`, `width`, `on_show`, `on_hide`, `on_focus`, `on_blur`) are queried with `getattr` defaults.  Content may also define `click(row, col) -> bool` (sidebar panels) or `click(col, row) -> bool` (bottom tabs) to handle mouse clicks on the panel body; the hosts forward body clicks automatically (sidebar header clicks switch panels).  Tree-backed panels can delegate to `TreeView.click(row, col)`, which selects the clicked node and toggles/expands it like `<CR>`.
+Both the sidebar and bottom panel are instances of `PanelHost` and support the same content protocol: `render(grid: CellGrid) -> None`, `feed_key(key: str) -> bool`.  Optional attributes (`title`, `width`, `on_show`, `on_hide`, `on_focus`, `on_blur`) are queried with `getattr` defaults.  Content may also define `click(row, col) -> bool` (sidebar panels) or `click(col, row) -> bool` (bottom tabs) to handle mouse clicks on the panel body; the hosts forward body clicks automatically (sidebar selector clicks switch panels).  Tree-backed panels can delegate to `TreeView.click(row, col)`, which selects the clicked node and toggles/expands it like `<CR>`.
 
 **Unified API** (host-agnostic):
 
@@ -1314,6 +1314,13 @@ ui.set_sidebar_style(*, background, header_active_fg, header_active_bg,
 ui.sidebar_nmap(key, plug_name)  # bind a sidebar-internal key to a <Plug>
 ```
 
+Sidebar panels receive the full available height. Their `width` is the desired
+content width; the host adds eight columns for the selector and divider. The
+selector uses short display labels while registration names and scoped keymaps
+retain their existing names (e.g. `explorer` displays as `file`). Panel-scoped
+bindings are inactive while the selector is focused; sidebar-scoped bindings
+remain available.
+
 **Bottom panel-specific API**:
 
 ```python
@@ -1333,7 +1340,9 @@ ui.close_picker() -> None
 # Sidebar queries
 ui.get_sidebar_panel(name: str) -> Any
 ui.active_sidebar_panel_name() -> str | None
-ui.focused_sidebar_panel_name() -> str | None  # active panel when focused, else None
+ui.sidebar_flash_tree() -> Any  # visible tree with Flash matching/selection support, else None
+ui.sidebar_flash_selector() -> Any  # visible selector with Flash matching/selection support, else None
+ui.focused_sidebar_panel_name() -> str | None  # focused content name, "sidebar" for selector, else None
 ui.show_active_sidebar_panel(*, focus: bool = True) -> Any
 ```
 

@@ -76,6 +76,23 @@ def _controller_with_selection(api: EditorAPI, node) -> _ExplorerController:
 
 
 class TestExplorerNodes:
+    def test_setup_registers_files_for_selector_without_opening_sidebar(self, tmp_path):
+        from peovim.plugins.explorer import setup
+
+        api = _make_api()
+        api.find_root = lambda: tmp_path
+        (tmp_path / "example.py").write_text("hello")
+        setup(api)
+        assert "explorer" in api.ui.list_sidebar_panels()
+        assert not api.ui.is_sidebar_visible()
+        api.ui.show_active_sidebar_panel(focus=True)
+        panel = api.ui.get_sidebar_panel("explorer")
+        assert "example.py" in [node.label for node, _depth in panel.tree._visible_nodes()]
+        api.ui._sidebar.feed_key("h")
+        assert api.ui.focused_sidebar_panel_name() == "sidebar"
+        api.ui._sidebar.feed_key("l")
+        assert api.ui.focused_sidebar_panel_name() == "explorer"
+
     def test_make_nodes_lists_files_and_dirs(self, tmp_path):
         (tmp_path / "file.py").write_text("# hello")
         (tmp_path / "subdir").mkdir()
