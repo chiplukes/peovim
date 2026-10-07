@@ -79,7 +79,7 @@ Requires `peovim.plugins.picker`. Default bindings use `<leader>ff/fb/fg`; remap
 | `<leader>sb` | `PickerFindBuffers` | Open buffers |
 | `<leader>sg` | `PickerLiveGrep` | Live grep |
 | `<leader>sw` | `PickerWordGrep` | Grep word under cursor |
-| `<leader>s/` | `PickerBufferLines` | Search lines in current buffer |
+| `<leader>s/` | `PickerBufferLines` | Search lines in current buffer with a contextual preview (including unsaved edits) |
 | `<leader>sd` | `PickerDiagnostics` | Search diagnostics |
 | `<leader>sp` | `PickerCommands` | Search / run ex commands |
 
@@ -679,6 +679,11 @@ Requires `peovim.plugins.flash`.
 | Key | `<Plug>` | Mode | Action |
 |-----|---------|------|--------|
 | `s` | `FlashJump` | Normal, Visual | Type 2 chars, press jump label |
+
+In Normal mode, Flash searches visible editor text and the visible entries in a
+tree-backed sidebar (including Explorer). Jumping to a sidebar entry focuses and
+selects it; press Enter to open it or expand a directory. Flash also works when
+started from the sidebar. Visual-mode jumps stay within the current editor window.
 
 ---
 

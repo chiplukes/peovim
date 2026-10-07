@@ -49,6 +49,98 @@ def _split_with_buffer(api: EditorAPI, path: Path) -> tuple[object, object]:
 
 
 class TestFlashPlugin:
+    def test_flash_from_sidebar_focuses_editor_and_clears_two_char_labels(self, tmp_path):
+        from peovim.plugins.flash import setup
+        from peovim.ui.cell_grid import CellGrid
+        from peovim.ui.sidebar import TreeSidebarPanel
+        from peovim.ui.tree_view import TreeNode, TreeView
+
+        active = tmp_path / "active.txt"
+        active.write_text("target\n", encoding="utf-8")
+        api = _make_api(active)
+        tree = TreeView([TreeNode("target") for _ in range(30)])
+        api.ui.show_sidebar_panel("tree", TreeSidebarPanel(tree), focus=True)
+        api.ui._sidebar.render(CellGrid(30, 40))
+        setup(api)
+        flash = api.flash_plugin
+        flash.start()
+        flash.feed_key("t")
+        flash.feed_key("a")
+        assert len(flash._labels) == 31
+        assert tree.flash_labels
+        flash.feed_key("a")
+        assert flash.is_active
+        flash.feed_key("a")
+        assert not flash.is_active
+        assert not tree.flash_labels
+        assert api.ui.focused_sidebar_panel_name() is None
+        assert api.active_window().cursor == (0, 0)
+
+    def test_flash_selects_visible_sidebar_entry_without_opening_it(self, tmp_path):
+        from peovim.plugins.explorer import _ExplorerSidebarPanel
+        from peovim.plugins.flash import setup
+        from peovim.ui.cell_grid import CellGrid
+        from peovim.ui.tree_view import TreeNode, TreeView
+
+        active = tmp_path / "active.txt"
+        active.write_text("no match\n", encoding="utf-8")
+        api = _make_api(active)
+        opened = MagicMock()
+        tree = TreeView([TreeNode("first.py"), TreeNode("target.py")], title="Explorer", on_select=opened)
+        api.ui.show_sidebar_panel("explorer", _ExplorerSidebarPanel(tree), focus=False)
+        api.ui._sidebar.render(CellGrid(30, 12))
+        setup(api)
+        flash = api.flash_plugin
+        flash.start()
+        flash.feed_key("t")
+        flash.feed_key("a")
+        assert tree.flash_labels == {(1, 2): "a"}
+        grid = CellGrid(30, 12)
+        api.ui._sidebar.render(grid)
+        assert grid._current[5][2][0] == "a"
+        assert grid._current[5][2][1] == (255, 215, 0)
+        flash.feed_key("a")
+        assert tree.selected_node.label == "target.py"
+        assert api.ui.focused_sidebar_panel_name() == "explorer"
+        assert api.active_buffer().path == active.resolve()
+        assert not tree.flash_labels
+        opened.assert_not_called()
+
+    def test_flash_sidebar_matches_exclude_clipped_and_scrolled_entries(self):
+        from peovim.ui.cell_grid import CellGrid
+        from peovim.ui.tree_view import TreeNode, TreeView
+
+        tree = TreeView([TreeNode("target") for _ in range(10)], title="Tree", width=10)
+        tree.flash_select(5)
+        tree.render(CellGrid(10, 4))
+        assert tree.flash_matches("ta") == [(3, 2), (4, 2), (5, 2)]
+        assert tree.flash_matches("zz") == []
+        tree._width = 3
+        assert tree.flash_matches("ta") == []
+
+    def test_flash_cancel_clears_sidebar_labels_and_preserves_focus(self, tmp_path):
+        from peovim.plugins.flash import setup
+        from peovim.ui.cell_grid import CellGrid
+        from peovim.ui.tree_view import TreeNode, TreeView
+
+        active = tmp_path / "active.txt"
+        active.write_text("target\n", encoding="utf-8")
+        api = _make_api(active)
+        tree = TreeView([TreeNode("target")])
+        from peovim.ui.sidebar import TreeSidebarPanel
+
+        api.ui.show_sidebar_panel("tree", TreeSidebarPanel(tree), focus=False)
+        api.ui._sidebar.render(CellGrid(30, 12))
+        setup(api)
+        flash = api.flash_plugin
+        flash.start()
+        flash.feed_key("t")
+        flash.feed_key("a")
+        assert tree.flash_labels
+        flash.feed_key("<Esc>")
+        assert not tree.flash_labels
+        assert api.ui.focused_sidebar_panel_name() is None
+
     def test_start_uses_status_without_notifications(self, tmp_path):
         from peovim.plugins.flash import setup
 

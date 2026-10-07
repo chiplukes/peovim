@@ -242,15 +242,22 @@ def _grep_word_under_cursor(api: Any) -> None:
 def _search_buffer_lines(api: Any) -> None:
     """Open a picker over the current buffer lines."""
     buf = api.active_buffer()
-    items = [
-        _LineItem(f"{line_num + 1:>4}: {buf.get_line(line_num)}", line_num) for line_num in range(buf.line_count())
-    ]
+    win = api.active_window()
+    lines = [buf.get_line(line_num) for line_num in range(buf.line_count())]
+    items = [_LineItem(f"{line_num + 1:>4}: {text}", line_num) for line_num, text in enumerate(lines)]
 
     def _on_confirm(item: _LineItem) -> None:
-        win = api.active_window()
         win.set_cursor(item.line, 0)
+        win.scroll_to_cursor()
 
-    api.ui.open_picker("Buffer Lines", items, on_confirm=_on_confirm)
+    api.ui.open_picker(
+        "Buffer Lines",
+        items,
+        on_confirm=_on_confirm,
+        preview=lambda item: _format_centered_preview(
+            lines, item.line, lang=detect_filetype(str(buf.path)) if buf.path else "", theme=_preview_theme(api)
+        ),
+    )
 
 
 def _find_diagnostics(api: Any) -> None:

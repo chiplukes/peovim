@@ -57,6 +57,7 @@ class FlashPlugin:  # cm:4d1b6e
         self._resume_visual_cursor: tuple[int, int] | None = None
         self._resume_visual_scroll: int | None = None
         self._resume_visual_window: Any = None
+        self._sidebar_tree: Any = None
 
     @property
     def is_active(self) -> bool:
@@ -69,6 +70,7 @@ class FlashPlugin:  # cm:4d1b6e
         self._char2 = ""
         self._labels.clear()
         self._label_prefix = ""
+        self._sidebar_tree = self._api.ui.sidebar_flash_tree()
         self._api.set_status("flash> ", notify=False)
 
     def feed_key(self, key: str) -> bool:
@@ -151,6 +153,8 @@ class FlashPlugin:  # cm:4d1b6e
                         break
                     matches.append((win, ln, idx))
                     search_col = idx + 1
+        if self._resume_visual_window is None and self._sidebar_tree is not None:
+            matches.extend((self._sidebar_tree, index, col) for index, col in self._sidebar_tree.flash_matches(query))
         return matches
 
     def _compute_matches(self) -> None:
@@ -173,6 +177,9 @@ class FlashPlugin:  # cm:4d1b6e
                 break
             label = label_list[i]
             self._labels[label] = (win, ln, col)
+            if win is self._sidebar_tree:
+                win.flash_labels[(ln, col)] = label[0]
+                continue
             self._api.add_window_overlay(
                 win, "flash:labels", OverlayChar(line=ln, col=col, display_char=label[0], style=label_style)
             )
@@ -187,6 +194,9 @@ class FlashPlugin:  # cm:4d1b6e
         sublabel_style = Style(fg=(255, 140, 0), bg=(40, 20, 0))
         for full_label, (win, ln, col) in remaining.items():
             second_char = full_label[1] if len(full_label) > 1 else full_label[0]
+            if win is self._sidebar_tree:
+                win.flash_labels[(ln, col)] = second_char
+                continue
             self._api.add_window_overlay(
                 win,
                 "flash:labels",
@@ -198,13 +208,19 @@ class FlashPlugin:  # cm:4d1b6e
         """Clear flash label decorations from all windows."""
         for win in self._api.list_windows():
             self._api.clear_window_namespace(win, "flash:labels")
+        if self._sidebar_tree is not None:
+            self._sidebar_tree.flash_labels.clear()
 
     def _jump(self, label: str) -> None:
         win, line, col = self._labels[label]
         self._api.record_jump()
-        if self._resume_visual_mode is not None:
+        if win is self._sidebar_tree:
+            win.flash_select(line)
+            self._api.ui.focus_sidebar()
+        elif self._resume_visual_mode is not None:
             self._restore_visual_state((line, col))
         else:
+            self._api.ui.blur_sidebar()
             self._api.activate_window(win)
             win.set_cursor(line, col)
             win.scroll_to_cursor()

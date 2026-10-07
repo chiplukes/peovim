@@ -419,6 +419,19 @@ class TestEventLoopSidebarLayout:
 
 
 class TestSidebarLeaderPassthrough:
+    def test_flash_key_falls_through_when_sidebar_focused(self):
+        from unittest.mock import MagicMock
+
+        loop, _workspace = _make_event_loop(cols=80, rows=24)
+        host = SidebarHost()
+        panel = _DummyPanel(width=20)
+        host.show_panel("nav", panel, focus=True)
+        loop._sidebar = host
+        loop._flash = MagicMock(is_active=False)
+
+        assert loop._handle_overlay_key("s") is False
+        assert panel.keys == []
+
     def test_leader_key_falls_through_when_sidebar_focused(self):
         loop, _workspace = _make_event_loop(cols=80, rows=24)
         host = SidebarHost()

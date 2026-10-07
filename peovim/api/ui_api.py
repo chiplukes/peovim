@@ -194,6 +194,14 @@ class UIAPI:  # cm:3c9d4f
     def active_sidebar_panel_name(self) -> str | None:
         return self._sidebar.active_panel_name
 
+    def sidebar_flash_tree(self) -> Any:
+        """Return the visible sidebar's tree, when it supports Flash navigation."""
+        if not self._sidebar.visible:
+            return None
+        panel = self._sidebar.active_panel
+        tree = getattr(panel, "tree", None)
+        return tree if callable(getattr(tree, "flash_matches", None)) else None
+
     def focused_sidebar_panel_name(self) -> str | None:
         """Return the active panel name when the sidebar is focused, else None."""
         if not self._sidebar.focused:

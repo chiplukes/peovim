@@ -327,6 +327,24 @@ class TestLiveGrep:
 
 
 class TestBufferLines:
+    def test_preview_uses_unsaved_buffer_text_and_highlights_selected_line(self):
+        from peovim.plugins.picker import _search_buffer_lines
+
+        api = _make_api()
+        buf = api.active_buffer.return_value
+        buf.path = None
+        buf.line_count.return_value = 80
+        buf.get_line.side_effect = [f"unsaved{i}" for i in range(80)]
+        _search_buffer_lines(api)
+        item = api.ui.open_picker.call_args.args[1][70]
+        preview = api.ui.open_picker.call_args.kwargs["preview"](item)
+        plain = ["".join(text for text, _style in line) for line in preview]
+        assert len(plain) == 60
+        assert any(line.startswith(">  71: unsaved70") for line in plain)
+        api.ui.open_picker.call_args.kwargs["on_confirm"](item)
+        api.active_window.return_value.set_cursor.assert_called_once_with(70, 0)
+        api.active_window.return_value.scroll_to_cursor.assert_called_once()
+
     def test_search_buffer_lines_opens_picker(self):
         from peovim.plugins.picker import _search_buffer_lines
 

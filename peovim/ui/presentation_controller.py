@@ -137,6 +137,8 @@ class OverlayPresentationController:
         engine = host._engine
         if getattr(engine._state, "key_buffer", None):
             return True
+        if key == "s" and host._flash is not None:
+            return True
         leader = self._leader_key()
         return bool(leader) and key == leader
 

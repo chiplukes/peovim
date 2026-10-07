@@ -88,6 +88,36 @@ class TreeView:  # cm:e3f1b4
         self._is_open: bool = True
         self.focused: bool = False
         self.blink_on: bool = True  # controlled externally by sidebar blink tick
+        self._rendered_height = 0
+        self.flash_labels: dict[tuple[int, int], str] = {}
+
+    def flash_matches(self, query: str) -> list[tuple[int, int]]:
+        """Return matches in node labels within the last rendered viewport."""
+        start_row = 1 if self._title else 0
+        matches = []
+        for index, (node, depth) in enumerate(self._visible_nodes()):
+            row = start_row + index - self._scroll_top
+            if not start_row <= row < self._rendered_height:
+                continue
+            prefix = (
+                "  " * depth
+                + (self._EXPANDED if node.expanded else self._COLLAPSED if node.has_children() else self._LEAF)
+                + ((node.icon + " ") if node.icon else "")
+            )
+            text = (prefix + node.label)[: self._width].lower()
+            col = len(prefix)
+            while (col := text.find(query.lower(), col)) >= 0:
+                matches.append((index, col))
+                col += 1
+        return matches
+
+    def flash_select(self, index: int) -> None:
+        """Move selection without opening a file or toggling a directory."""
+        visible = self._visible_nodes()
+        if 0 <= index < len(visible):
+            self._selected_idx = index
+            if self._on_cursor_move is not None:
+                self._on_cursor_move(visible[index][0])
 
     # ------------------------------------------------------------------
     # Public actions
@@ -254,6 +284,7 @@ class TreeView:  # cm:e3f1b4
         from peovim.ui.backend import ATTR_BOLD
 
         height = grid.height
+        self._rendered_height = height
         visible = self._visible_nodes()
         blink_on = self.blink_on if self.focused else True
 
@@ -320,6 +351,11 @@ class TreeView:  # cm:e3f1b4
                     grid.write_str(row_idx, col, " " * remaining, fg=node.fg, bg=node.bg)
             else:
                 grid.write_str(row_idx, 0, text, fg=node.fg, bg=node.bg)
+
+        for (index, col), label in self.flash_labels.items():
+            row = start_row + index - self._scroll_top
+            if start_row <= row < height and 0 <= col < grid.width:
+                grid.write_str(row, col, label, fg=(255, 215, 0), bg=(30, 25, 0))
 
     def cursor_row(self, available_height: int) -> int | None:
         """Return the row within the tree grid where the terminal cursor should sit.
