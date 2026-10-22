@@ -714,6 +714,11 @@ panel. Jumping to a sidebar content entry focuses and selects it; press Enter
 to open it or expand a directory. Flash also works when started from the sidebar
 or its selector. Visual-mode jumps stay within the current editor window.
 
+Press `<Esc>` to cancel Flash and return input to the editor. When started from
+Visual mode, cancellation restores the original selection. A left mouse click
+also cancels Flash before handling the click; wheel scrolling and button release
+do not cancel it.
+
 ---
 
 ## Plugin: Fquick (Session File Navigator)

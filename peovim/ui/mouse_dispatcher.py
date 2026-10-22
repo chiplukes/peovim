@@ -18,6 +18,7 @@ from peovim.ui.text_layout import display_col_to_logical_col, logical_col_to_dis
 
 if TYPE_CHECKING:
     from peovim.core.workspace import Workspace
+    from peovim.modal.actions import Action
     from peovim.modal.dispatcher import ActionDispatcher
     from peovim.modal.engine import ModalEngine
     from peovim.ui.backend import MouseEvent
@@ -40,6 +41,7 @@ class MouseDispatcher:
         get_sidebar_fn: Callable[[], SidebarHost | None] | None = None,
         get_bottom_panel_rect_fn: Callable[[], Rect | None] | None = None,
         get_bottom_panel_fn: Callable[[], Any] | None = None,
+        on_editor_click: Callable[[], None] | None = None,
     ) -> None:
         self._workspace = workspace
         self._engine = engine
@@ -49,6 +51,7 @@ class MouseDispatcher:
         self._get_sidebar: Callable[[], SidebarHost | None] = get_sidebar_fn or (lambda: None)
         self._get_bottom_panel_rect: Callable[[], Rect | None] = get_bottom_panel_rect_fn or (lambda: None)
         self._get_bottom_panel: Callable[[], Any] = get_bottom_panel_fn or (lambda: None)
+        self._on_editor_click = on_editor_click
         self._drag_active: bool = False  # True while left button is held and dragging
         self._drag_leaf: Any = None  # WindowLeaf the drag started in
         self._drag_rect: Any = None  # screen Rect of that leaf
@@ -98,7 +101,8 @@ class MouseDispatcher:
 
     def _click(self, event: MouseEvent) -> None:
         """Focus window under cursor and move buffer cursor there."""
-        from peovim.modal.actions import MoveCursor
+        from peovim.modal.actions import EnterInsertMode, EnterNormalMode, MoveCursor
+        from peovim.modal.engine import Mode
 
         self._scrollbar_drag_active = False
         self._scrollbar_drag_leaf = None
@@ -117,13 +121,34 @@ class MouseDispatcher:
             return
 
         leaf, rect = hit
+        resume_insert = False
+        if not self._is_scrollbar_hit(leaf.window, rect, event):
+            if self._on_editor_click is not None:
+                self._on_editor_click()
+            # A new text click starts a new command, while keeping an existing
+            # insert/replace session in that mode. A subsequent drag can start
+            # a fresh visual selection from the clicked position.
+            if self._engine.mode in (Mode.VISUAL_CHAR, Mode.VISUAL_LINE, Mode.VISUAL_BLOCK):
+                self._dispatcher.dispatch([EnterNormalMode()])
+            elif self._engine.mode == Mode.INSERT and leaf.window is not self._workspace.active_window:
+                # Close the old document's undo group before beginning an
+                # insert session in the clicked window.
+                self._dispatcher.dispatch([EnterNormalMode()])
+                resume_insert = True
+            self._engine.cancel_pending_input()
+            for panel in (self._get_sidebar(), self._get_bottom_panel()):
+                if panel is not None:
+                    panel.blur()
         self._focus_window(leaf)
         if self._press_scrollbar(leaf, rect, event):
             return
 
         line, col = self._buffer_position_for_point(leaf.window, rect, event.row, event.col)
 
-        self._dispatcher.dispatch([MoveCursor(line, col)])
+        actions: list[Action] = [MoveCursor(line, col)]
+        if resume_insert:
+            actions.append(EnterInsertMode("cursor"))
+        self._dispatcher.dispatch(actions)
 
     def _click_bottom_panel(self, event: MouseEvent) -> bool:
         bp = self._get_bottom_panel()
@@ -136,6 +161,10 @@ class MouseDispatcher:
             return False
         local_row = event.row - bp_rect.y
         local_col = event.col - bp_rect.x
+        sidebar = self._get_sidebar()
+        if sidebar is not None:
+            sidebar.blur()
+        self._engine.cancel_pending_input()
         click = getattr(bp, "click", None)
         if callable(click):
             return bool(click(local_col, local_row))
@@ -155,6 +184,10 @@ class MouseDispatcher:
             return False
         local_row = event.row - sidebar_rect.y
         local_col = event.col - sidebar_rect.x
+        bottom_panel = self._get_bottom_panel()
+        if bottom_panel is not None:
+            bottom_panel.blur()
+        self._engine.cancel_pending_input()
         click = getattr(sidebar, "click", None)
         if callable(click):
             return bool(click(local_row, local_col))

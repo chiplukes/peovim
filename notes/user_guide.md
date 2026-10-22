@@ -228,6 +228,12 @@ When the terminal reports mouse events, clicks work across the UI:
   to it.
 - Scroll wheel scrolls the window under the pointer.
 
+A fresh text click returns keyboard focus from panels to the editor, cancels
+unfinished commands and command prompts, and clears an old visual selection.
+Clicks during insert or replace mode keep that typing mode; dragging still
+starts a new selection. A left click also cancels Flash or an active target
+chooser. Wheel scrolling and button release leave those searches active.
+
 ---
 
 ## Git and diff workflows

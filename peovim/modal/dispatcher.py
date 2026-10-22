@@ -477,11 +477,7 @@ class ActionDispatcher:  # cm:7a5d8b
     def _sync_post_dispatch_state(self) -> None:
         if self._workspace is not None:
             self.window = self._workspace.active_window
-        cur = self.window.cursor
-        self.engine.set_cursor(cur.line, cur.col)
-        self.engine.set_line_count(self.window.document.line_count())
-        self.engine.set_document(self.window.document)
-        self.engine.set_scroll(self.window.scroll_line)
+        self.engine.sync_window_context(self.window)
 
     def _flush_pending_events(self) -> None:
         events = self._pending_events

@@ -67,12 +67,29 @@ class InputController:
                     elif self.handle_key_event(event):
                         return
                 elif isinstance(event, MouseEvent):
-                    host.cancel_key_interceptors()
+                    if event.button == 0 and event.pressed and not event.dragging:
+                        host.cancel_key_interceptors()
+                        if host._flash is not None and getattr(host._flash, "is_active", False):
+                            host._flash.feed_key("<Esc>")
                     host._mouse_dispatcher.handle(event)
+                    self.check_key_prefix_events()
             except Exception as exc:
                 host._report_runtime_error("input handling", exc)
 
             host._invalidate("full")
+
+    def prepare_editor_click(self) -> None:
+        """Dismiss command prompts before mouse handling activates an editor view."""
+        host = self._host
+        if host._cmdline.active:
+            host._cmdline.feed_key("<Esc>")
+            host._engine.consume_filter_range()
+            host._invalidate_cmdline()
+        # A mouse event separates any earlier Escape from subsequent keys.
+        # Do not strip a genuine Alt key after returning to the editor by mouse.
+        host._cmdline_just_dismissed = False
+        if host._editor_state is not None and host._editor_state.confirm_sub is not None:
+            self._handle_confirm_sub_key("<Esc>")
 
     def handle_key_event(self, event: KeyEvent) -> bool:
         from peovim.modal.actions import EnterCommandMode, QuitEditor, RunExCommand, SetSearchPattern

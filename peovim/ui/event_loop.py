@@ -129,6 +129,7 @@ class EventLoop:  # cm:e4d6b5
             get_sidebar_fn=lambda: self._sidebar,
             get_bottom_panel_rect_fn=lambda: self._current_bottom_panel_rect,
             get_bottom_panel_fn=lambda: self._bottom_panel,
+            on_editor_click=lambda: self._input_controller.prepare_editor_click(),
         )
         # Tree views list (shared reference to UIAPI._tree_views when available)
         self._tree_views: list = []

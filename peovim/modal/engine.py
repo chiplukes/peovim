@@ -273,6 +273,7 @@ class ModalEngine:  # cm:5c8e7a
         self._document: Document | None = None
         # Live provider: if set, overrides all shadow-state pushes at feed_key time.
         self._provider: Callable[[], Window] | None = None
+        self._context_window: Window | None = None
         self._filter_range: tuple[int, int] | None = None  # set by !{motion}
         self._last_ex_command: str = ""  # for @: repeat
         # Set during block insert so <BS>/<Del> can't eat past the insert column
@@ -292,6 +293,8 @@ class ModalEngine:  # cm:5c8e7a
 
     def set_document(self, doc: Document) -> None:
         """Called by dispatcher to give the engine access to document content."""
+        if self._document is not None and self._document is not doc and self.mode == Mode.NORMAL:
+            self.cancel_pending_input()
         self._document = doc
 
     def set_scroll(self, scroll_line: int) -> None:
@@ -305,11 +308,17 @@ class ModalEngine:  # cm:5c8e7a
         """Pull cursor, line_count, scroll, and document from the live provider."""
         if self._provider is None:
             return
-        win = self._provider()
+        self.sync_window_context(self._provider())
+
+    def sync_window_context(self, win: Window) -> None:
+        """Sync the active view, discarding partial normal commands when it changes."""
+        if self._context_window is not None and self._context_window is not win and self.mode == Mode.NORMAL:
+            self.cancel_pending_input()
+        self._context_window = win
         self._cursor = (win.cursor.line, win.cursor.col)
         self._line_count = win.document.line_count()
         self._scroll_line = win.scroll_line
-        self._document = win.document
+        self.set_document(win.document)
 
     def consume_filter_range(self) -> tuple[int, int] | None:
         """Return and clear the pending filter range (set by ! operator)."""
@@ -327,6 +336,10 @@ class ModalEngine:  # cm:5c8e7a
     def set_mode(self, mode: Mode) -> None:
         """Called by dispatcher after processing mode transition actions."""
         self.mode = mode
+        self.cancel_pending_input()
+
+    def cancel_pending_input(self) -> None:
+        """Discard an unfinished command or register prefix without changing mode."""
         self._state.reset()
         self._register_pending = False
 
