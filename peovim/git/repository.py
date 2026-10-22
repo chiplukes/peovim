@@ -419,6 +419,40 @@ class GitRepository:
             return []
         return _parse_log_entries(result.stdout.splitlines())
 
+    def commit_files(self, ref: str, *, path: Path | None = None) -> list[GitStatusEntry]:
+        """Files changed against the first parent (or empty tree for a root commit).
+
+        NUL-delimited names preserve spaces, tabs, newlines, and rename pairs.
+        Errors propagate so callers can distinguish a failed query from an empty commit.
+        """
+        result = self._run(
+            [
+                "diff-tree",
+                "--root",
+                "--no-commit-id",
+                "--name-status",
+                "-r",
+                "-z",
+                "-M",
+                "--diff-merges=first-parent",
+                ref,
+                "--",
+            ],
+            path=path,
+            check=True,
+        )
+        fields = iter(result.stdout.rstrip("\0").split("\0"))
+        entries = []
+        for status in fields:
+            if not status:
+                continue
+            original = None
+            name = next(fields)
+            if status[0] in {"R", "C"}:
+                original, name = name, next(fields)
+            entries.append(GitStatusEntry(status[0], name, status[0], " ", original))
+        return entries
+
     def get_hunks(self, buf_path: Path | None = None) -> list[dict]:
         if buf_path is None:
             return []

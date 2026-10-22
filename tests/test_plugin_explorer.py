@@ -644,6 +644,43 @@ class TestExplorerCommands:
 class TestExplorerDiffIntegration:
     """Mark-slot-1/2 and launch-diff, driven from an explorer selection."""
 
+    def test_previous_uses_selected_file_and_rejects_directory(self, tmp_path):
+        from peovim.ui.tree_view import TreeNode
+
+        api = _make_api()
+        target = tmp_path / "selected.py"
+        target.write_text("selected\n")
+        received = []
+        api.events.on("git_diff_previous_path", lambda **kw: received.append(kw))
+        controller = _controller_with_selection(api, TreeNode(label=target.name, value=str(target)))
+        controller.diff_against_previous()
+        assert received == [{"path": str(target)}]
+        controller = _controller_with_selection(api, TreeNode(label="directory", value=str(tmp_path)))
+        controller.diff_against_previous()
+        assert len(received) == 1
+
+    def test_git_diff_shortcuts_route_by_scope_in_either_plugin_load_order(self, tmp_path, monkeypatch):
+        from peovim.plugins import explorer, gitsigns
+
+        for plugins in ((explorer, gitsigns), (gitsigns, explorer)):
+            api = _make_api()
+            monkeypatch.setattr(api, "find_root", lambda: tmp_path)
+            for plugin in plugins:
+                plugin.setup(api)
+            registry = api.keymap._registry
+            for suffix, global_plug, explorer_plug, panel_plug in (
+                ("dw", "GitsignsDiffHead", "ExplorerDiffHead", "GitsignsPanelDiffWorking"),
+                ("dp", "GitsignsDiffPrevious", "ExplorerDiffPrevious", "GitsignsPanelDiffPrevious"),
+            ):
+                received = []
+                for plug in (global_plug, explorer_plug, panel_plug):
+                    api.keymap.define_plug(plug, lambda p=plug, results=received: results.append(p))
+                for scope, expected in ((None, global_plug), ("explorer", explorer_plug), ("git-status", panel_plug)):
+                    registry.set_scope_resolver(lambda s=scope: s)
+                    api.keymap.feed_keys(api.keymap.leader + suffix)
+                    assert received[-1] == expected
+            gitsigns.teardown()
+
     def test_diff_mark_emits_event_for_selected_file(self, tmp_path):
         from peovim.ui.tree_view import TreeNode
 

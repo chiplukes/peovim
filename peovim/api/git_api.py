@@ -97,6 +97,10 @@ class GitAPI:
     def remote_url(self, path: pathlib.Path | None = None, *, remote: str = "origin") -> str | None:
         return self._repo.remote_url(path, remote=remote)
 
+    def commit_files(self, ref: str, *, path: pathlib.Path | None = None) -> list[GitStatusEntry]:
+        """Return changed files relative to the commit's first parent."""
+        return self._repo.commit_files(ref, path=path)
+
     def create_branch(self, name: str, *, path: pathlib.Path | None = None, start_point: str | None = None) -> None:
         self._repo.create_branch(name, path=path, start_point=start_point)
 

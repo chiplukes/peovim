@@ -160,6 +160,8 @@ A more thorough `init.py` can be found here:
 |-----|--------|
 | `<leader>e` | Toggle file explorer |
 | `<leader>gs` | Toggle git panel |
+| `<leader>dw` | Diff file against working tree (selected revision in git history) |
+| `<leader>dp` | Diff commit against its first parent (HEAD in editor/explorer) |
 | `<A-h>` | Focus sidebar from editor |
 | `<A-l>` | Return to editor from sidebar |
 | `<A-j>` / `<A-k>` | Cycle sidebar panels |
@@ -167,12 +169,14 @@ A more thorough `init.py` can be found here:
 
 ### Git Panel (when focused)
 
+Expand **Recent commits** to browse the latest 30 commits and their changed files. On a commit file, Enter or `d` opens its diff against the first parent; `<leader>dw` compares that revision with the working file.
+
 | Key | Action |
 |-----|--------|
 | `a` | Stage file |
 | `u` | Unstage file |
 | `x` | Discard changes |
-| `d` | Diff file against HEAD |
+| `d` | Diff status file against HEAD, or commit file against its parent |
 | `l` | Git log browser |
 | `P` | Push |
 | `p` | Pull |

@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+from functools import partial
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
@@ -51,6 +52,8 @@ _HUNK_TYPE_TO_SIGN = {
 _debounce_timers: dict[int, Any] = {}
 _tokens: list[int] = []
 _status_panel: _GitStatusSidebarPanel | None = None
+# Revision snapshots retain their source so diff actions also work inside the viewer.
+_revision_sources: dict[Path, tuple[Path, str, str]] = {}
 
 
 class _GitStatusSidebarPanel:
@@ -90,21 +93,49 @@ class _GitStatusSidebarPanel:
         self._api.ui.notify("Git panel: press ? for help", level="info")
 
     def refresh(self) -> None:
+        selected = self._tree.selected_node
+        expansion = {node.value or node.label: node.expanded for node, _ in self._tree._visible_nodes()}
         title, nodes = _build_status_nodes(self._api)
+
+        def restore(items: list[Any]) -> None:
+            for node in items:
+                node.expanded = expansion.get(node.value or node.label, node.expanded)
+                if node.expanded:
+                    restore(node.get_children())
+
+        restore(nodes)
         self._tree._title = title
         self._tree.set_nodes(nodes)
+        if selected is not None and selected.value is not None:
+            self._tree.select_value(selected.value)
 
     def _on_select(self, node: Any) -> None:
+        if _selected_commit_file(node) is not None:
+            self.diff_selected(working=False, node=node)
+            return
         status_path = _selected_status_path(node)
         if status_path is None:
             return
         path = Path(status_path)
-        if path.is_file():
-            if _cmd_compare_file(self._api, status_path):
-                self._api.ui.blur_sidebar()
-            else:
-                self._api.open_buffer(path)
-                self._api.ui.blur_sidebar()
+        if _cmd_compare_file(self._api, status_path):
+            self._api.ui.blur_sidebar()
+        elif path.is_file():
+            self._api.open_buffer(path)
+            self._api.ui.blur_sidebar()
+
+    def diff_selected(self, *, working: bool, node: Any = None) -> None:
+        node = node if node is not None else self._tree.selected_node
+        selected = _selected_commit_file(node)
+        if selected is not None:
+            root, commit, entry = selected
+            opened = _diff_commit_file(self._api, root, commit, entry, working=working)
+        else:
+            path = _selected_status_path(node)
+            if path is None:
+                return
+            opened = _cmd_compare_file(self._api, path) if working else _cmd_diff_previous(self._api, path)
+        if opened:
+            self._api.ui.blur_sidebar()
 
     def _on_key(self, key: str, node: Any) -> bool:
         branch_ref = _selected_branch_ref(node)
@@ -137,9 +168,8 @@ class _GitStatusSidebarPanel:
         if key == "x" and status_path:
             _cmd_discard_file(self._api, status_path)
             return True
-        if key == "d" and status_path:
-            if _cmd_compare_file(self._api, status_path):
-                self._api.ui.blur_sidebar()
+        if key == "d" and (status_path or _selected_commit_file(node)):
+            self.diff_selected(working=status_path is not None, node=node)
             return True
         if key == "l":
             if _cmd_log(self._api, branch_ref or ""):
@@ -199,16 +229,29 @@ def setup(api: EditorAPI) -> None:  # cm:7e8b5d
     api.commands.register("GitCompareFile", lambda cmd, ctx: _cmd_compare_file(api, cmd.args.strip()), min_abbrev=11)
     api.commands.register("GitDiffFile", lambda cmd, ctx: _cmd_compare_file(api, cmd.args.strip()), min_abbrev=8)
     api.commands.register("GitDiffHead", lambda cmd, ctx: _cmd_diff_head(api, cmd.args.strip()), min_abbrev=8)
+    api.commands.register("GitDiffPrevious", lambda cmd, ctx: _cmd_diff_previous(api, cmd.args.strip()), min_abbrev=9)
 
     # Hunk navigation — also exposed as <Plug> for user remapping
     api.keymap.define_plug("GitsignsNextHunk", lambda: _next_hunk(api), desc="Git: next hunk")
     api.keymap.define_plug("GitsignsPrevHunk", lambda: _prev_hunk(api), desc="Git: previous hunk")
     api.keymap.define_plug("GitsignsStatusPanel", lambda: _toggle_status_panel(api), desc="Git: panel")
     api.keymap.define_plug("GitsignsDiffHead", lambda: _cmd_diff_head(api, ""), desc="Git: diff working file vs HEAD")
+    api.keymap.define_plug("GitsignsDiffPrevious", lambda: _cmd_diff_previous(api, ""), desc="Git: diff HEAD vs parent")
+    api.keymap.define_plug(
+        "GitsignsPanelDiffWorking", lambda: _panel_diff(api, working=True), desc="Git: diff vs working file"
+    )
+    api.keymap.define_plug(
+        "GitsignsPanelDiffPrevious", lambda: _panel_diff(api, working=False), desc="Git: diff commit vs parent"
+    )
     # Explicit-path variant for callers like explorer.py, where "the current file"
     # is whatever's highlighted in the tree, not the active editor buffer — mirrors
     # compare.py's compare_select_slot_path event.
     api.events.on("git_diff_head_path", lambda **kwargs: _cmd_diff_head(api, str(kwargs.get("path", ""))))
+    api.events.on("git_diff_previous_path", lambda **kwargs: _cmd_diff_previous(api, str(kwargs.get("path", ""))))
+    api.keymap.nmap("<leader>dw", "<Plug>GitsignsPanelDiffWorking", desc="Diff vs working file", scope="git-status")
+    api.keymap.nmap("<leader>dp", "<Plug>GitsignsPanelDiffPrevious", desc="Diff commit vs parent", scope="git-status")
+    api.keymap.nmap("<leader>dw", "<Plug>GitsignsDiffHead", desc="Diff working file vs HEAD")
+    api.keymap.nmap("<leader>dp", "<Plug>GitsignsDiffPrevious", desc="Diff HEAD vs parent")
     api.keymap.nmap("]c", "<Plug>GitsignsNextHunk", desc="Git: next hunk")
     api.keymap.nmap("[c", "<Plug>GitsignsPrevHunk", desc="Git: previous hunk")
     api.keymap.nmap("<leader>gs", "<Plug>GitsignsStatusPanel", desc="Git: panel")
@@ -231,6 +274,7 @@ def teardown() -> None:
         with contextlib.suppress(Exception):
             handle.cancel()
     _debounce_timers.clear()
+    _revision_sources.clear()
     _status_panel = None
 
 
@@ -454,7 +498,10 @@ def _panel_help_text() -> str:
             "  P push",
             "  l open log for current/selected branch",
             "  <CR> open selected status file",
-            "  d diff selected status file",
+            "  <CR>/d on commit file: diff commit vs first parent",
+            "  d on status file: diff vs working file",
+            "  <leader>dw diff selected revision vs working file",
+            "  <leader>dp diff selected commit (or HEAD) vs first parent",
             "  a/u/x stage, unstage, discard file",
             "  s checkout selected local branch",
             "  m merge selected local or remote branch",
@@ -479,6 +526,12 @@ def _refresh_panel(api: Any) -> None:
     panel = api.ui.get_sidebar_panel("git-status")
     if panel is not None and hasattr(panel, "refresh"):
         panel.refresh()
+
+
+def _panel_diff(api: Any, *, working: bool) -> None:
+    panel = api.ui.get_sidebar_panel("git-status")
+    if panel is not None:
+        panel.diff_selected(working=working)
 
 
 def _build_status_nodes(api: Any) -> tuple[str, list[TreeNode]]:
@@ -513,6 +566,7 @@ def _build_status_nodes(api: Any) -> tuple[str, list[TreeNode]]:
         _section_node("Branches", branch_nodes),
         _section_node("Status", status_nodes),
         _section_node("Remotes", remote_nodes),
+        _section_node("Recent commits", _recent_commit_nodes(api, root)),
     ]
     return title, nodes
 
@@ -523,6 +577,47 @@ def _section_node(label: str, children: list[TreeNode]) -> TreeNode:
     node = TreeNode(label=label, children_fn=lambda items=children: items)  # type: ignore[misc]
     node.expanded = True
     return node
+
+
+def _recent_commit_nodes(api: Any, root: Path) -> list[TreeNode]:
+    from peovim.ui.tree_view import TreeNode
+
+    try:
+        entries = api.git.log_entries(path=root, limit=30, ref="HEAD")
+    except Exception as exc:
+        return [TreeNode(label=f"Cannot load commits: {exc}")]
+    return [
+        TreeNode(
+            label=f"{entry.short_commit} {entry.subject} · {entry.author} · {entry.relative_date}",
+            value=("commit", str(root), entry.commit),
+            children_fn=partial(_commit_file_nodes, api, root, entry.commit),
+        )
+        for entry in entries
+    ] or [TreeNode(label="No commits yet")]
+
+
+def _commit_file_nodes(api: Any, root: Path, commit: str) -> list[TreeNode]:
+    from peovim.ui.tree_view import TreeNode
+
+    try:
+        entries = api.git.commit_files(commit, path=root)
+    except Exception as exc:
+        return [TreeNode(label=f"Cannot load files: {exc}")]
+    return [
+        TreeNode(
+            label=f"{entry.code} {entry.display_path}",
+            value=("commit-file", root, commit, entry),
+            fg=color_for_status_entry(entry, surface="panel"),
+        )
+        for entry in entries
+    ] or [TreeNode(label="No changed files")]
+
+
+def _selected_commit_file(node: Any) -> tuple[Path, str, Any] | None:
+    value = getattr(node, "value", None)
+    if isinstance(value, tuple) and len(value) == 4 and value[0] == "commit-file":
+        return Path(value[1]), value[2], value[3]
+    return None
 
 
 def _summary_nodes(state: Any) -> list[TreeNode]:
@@ -897,6 +992,9 @@ def _cmd_diff_head(api: Any, args: str) -> bool:
             return False
         target_path = Path(buf_path).resolve()
 
+    if target_path in _revision_sources:
+        return _cmd_diff_revision(api, target_path, working=True)
+
     root = _root_for_path(api, target_path)
     if root is None:
         api.ui.notify("Not in a git repository", level="info")
@@ -915,12 +1013,82 @@ def _cmd_diff_head(api: Any, args: str) -> bool:
     head_text = api.git.show_file_text(rel_path, path=root, ref="HEAD")
     left_bucket = "head" if head_text is not None else "empty"
     left_path = _write_compare_snapshot(root, left_bucket, rel_path, head_text or "")
-    api.events.emit("diff_selection_ready", left=str(left_path), right=str(target_path))
+    _revision_sources[left_path] = (root, rel_path, "HEAD")
+    right_path = target_path if target_path.exists() else _write_compare_snapshot(root, "working-tree", rel_path, "")
+    api.events.emit("diff_selection_ready", left=str(left_path), right=str(right_path))
     return True
 
 
+def _cmd_diff_previous(api: Any, args: str) -> bool:
+    """Compare HEAD (or the active historical revision) with its first parent."""
+    path = args.strip() or getattr(api.active_buffer(), "path", None)
+    if path is None:
+        api.ui.notify("Current buffer has no file", level="info")
+        return False
+    return _cmd_diff_revision(api, Path(path).resolve(), working=False)
+
+
+def _cmd_diff_revision(api: Any, target: Path, *, working: bool) -> bool:
+    from peovim.git import GitStatusEntry
+
+    if target.is_dir():
+        api.ui.notify("Git diff requires a file, not a directory", level="info")
+        return False
+    source = _revision_sources.get(target)
+    root = source[0] if source else _root_for_path(api, target)
+    if root is None:
+        api.ui.notify("Not in a git repository", level="info")
+        return False
+    try:
+        repo_path = source[1] if source else target.relative_to(root).as_posix()
+        ref = source[2] if source else "HEAD"
+        commits = api.git.log_entries(path=root, limit=1, ref=ref)
+        if not commits:
+            api.ui.notify("No commits yet", level="info")
+            return False
+        commit = commits[0].commit
+        entries = api.git.commit_files(commit, path=root)
+        entry = next((e for e in entries if e.path == repo_path), None)
+        entry = entry or GitStatusEntry("M", repo_path, "M", " ")
+        return _diff_commit_file(api, root, commit, entry, working=working)
+    except Exception as exc:
+        api.ui.notify(f"Git diff failed: {exc}", level="error")
+        return False
+
+
+def _diff_commit_file(api: Any, root: Path, commit: str, entry: Any, *, working: bool) -> bool:
+    if api.events.handler_count("diff_selection_ready") == 0:
+        api.ui.notify("Diff viewer not available (add peovim.plugins.compare to init.py)", level="info")
+        return False
+
+    def snapshot(ref: str, repo_path: str) -> Path:
+        text = api.git.show_file_text(repo_path, path=root, ref=ref)
+        path = _write_compare_snapshot(root, _snapshot_name(ref), repo_path, text or "")
+        _revision_sources[path] = (root, repo_path, ref)
+        return path
+
+    try:
+        if working:
+            left = snapshot(commit, entry.path)
+            right = root / entry.path
+            if not right.exists():
+                right = _write_compare_snapshot(root, "working-tree", entry.path, "")
+                _revision_sources[right] = (root, entry.path, commit)
+        else:
+            left = snapshot(f"{commit}^", entry.original_path or entry.path)
+            right = snapshot(commit, entry.path)
+        api.events.emit("diff_selection_ready", left=str(left), right=str(right))
+        return True
+    except Exception as exc:
+        api.ui.notify(f"Git diff failed: {exc}", level="error")
+        return False
+
+
 def _root_for_path(api: Any, path: Path) -> Path | None:
-    return api.git.root(path.parent if path.is_file() else path) or api.git.root()
+    candidate = path if path.is_dir() else path.parent
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return api.git.root(candidate) or api.git.root()
 
 
 def _git_root(api: Any) -> Path | None:
@@ -943,6 +1111,7 @@ def _compare_paths_for_status(api: Any, root: Path, entry: Any, target_path: Pat
     base_text = api.git.show_file_text(base_repo_path, path=root, ref="HEAD")
     left_bucket = "head" if base_text is not None else "empty"
     left_path = _write_compare_snapshot(root, left_bucket, base_repo_path, base_text or "")
+    _revision_sources[left_path] = (root, base_repo_path, "HEAD")
 
     right_path = target_path if target_path.exists() else _write_compare_snapshot(root, "working-tree", entry.path, "")
     return left_path, right_path

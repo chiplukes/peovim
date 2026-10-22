@@ -668,7 +668,7 @@ class TestStatusSidebar:
         title, nodes = _build_status_nodes(api)
 
         assert title == "Git [main]"
-        assert [node.label for node in nodes] == ["Summary", "Branches", "Status", "Remotes"]
+        assert [node.label for node in nodes] == ["Summary", "Branches", "Status", "Remotes", "Recent commits"]
         assert nodes[0].get_children()[2].label == "Sync: origin/main"
         assert nodes[2].get_children()[0].label == "Working tree clean"
 
@@ -772,7 +772,8 @@ class TestStatusSidebar:
         message = api.ui.notify.call_args.args[0]
         assert "Git panel keys:" in message
         assert "? help" in message
-        assert "d diff selected status file" in message
+        assert "d on status file: diff vs working file" in message
+        assert "<leader>dp" in message
 
     def test_panel_key_h_remains_tree_motion(self):
         from peovim.plugins.gitsigns import _GitStatusSidebarPanel

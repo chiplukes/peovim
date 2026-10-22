@@ -383,6 +383,7 @@ Requires `peovim.plugins.compare`. Default bindings use `<leader>c*`; remapped h
 | `<leader>d2` | `CompareSelect2` | Select current file as diff target 2 |
 | `<leader>dc` | `CompareSelected` | Launch side-by-side diff |
 | `<leader>dw` | `GitsignsDiffHead` | Diff current buffer against last commit (HEAD) — see `peovim.plugins.gitsigns`, requires no `git status` entry |
+| `<leader>dp` | `GitsignsDiffPrevious` | Diff HEAD against its first parent; in a revision snapshot, diff that revision against its parent |
 | `<leader>dj` | `CompareNextDiff` | Jump to next diff block |
 | `<leader>dk` | `ComparePrevDiff` | Jump to previous diff block |
 | `<leader>ds` | `CompareStop` | Stop diff session and clear decorations |
@@ -423,10 +424,15 @@ keymap.ngroup("<leader>d", "Diff")
 keymap.nmap("<leader>d1", "<Plug>ExplorerDiffMark1", desc="Mark diff file 1", scope="explorer")
 keymap.nmap("<leader>d2", "<Plug>ExplorerDiffMark2", desc="Mark diff file 2", scope="explorer")
 keymap.nmap("<leader>dc", "<Plug>ExplorerDiffLaunch", desc="Launch diff",     scope="explorer")
+keymap.nmap("<leader>dw", "<Plug>ExplorerDiffHead", desc="Diff selected file vs HEAD", scope="explorer")
+keymap.nmap("<leader>dp", "<Plug>ExplorerDiffPrevious", desc="Diff HEAD vs parent", scope="explorer")
+keymap.nmap("<leader>dw", "<Plug>GitsignsPanelDiffWorking", desc="Diff vs working file", scope="git-status")
+keymap.nmap("<leader>dp", "<Plug>GitsignsPanelDiffPrevious", desc="Diff commit vs parent", scope="git-status")
 keymap.nmap("<leader>d1",   "<Plug>CompareSelect1",  desc="Compare file 1")
 keymap.nmap("<leader>d2",   "<Plug>CompareSelect2",  desc="Compare file 2")
 keymap.nmap("<leader>dc",   "<Plug>CompareSelected", desc="Compare selected files")
 keymap.nmap("<leader>dw",   "<Plug>GitsignsDiffHead", desc="Diff working file vs HEAD")
+keymap.nmap("<leader>dp",   "<Plug>GitsignsDiffPrevious", desc="Diff HEAD vs parent")
 keymap.nmap("<leader>dj",   "<Plug>CompareNextDiff", desc="Next diff")
 keymap.nmap("<leader>dk",   "<Plug>ComparePrevDiff", desc="Prev diff")
 keymap.nmap("<leader>ds",   "<Plug>CompareStop",     desc="Stop compare")
@@ -456,6 +462,7 @@ Requires `peovim.plugins.explorer`.
 | `<leader>c2` | `ExplorerDiffMark2` | Explorer focused | Mark selected file as diff slot 2 |
 | `<leader>cc` | `ExplorerDiffLaunch` | Explorer focused | Launch diff for the two marked slots |
 | `<leader>dw` | `ExplorerDiffHead` | Explorer focused | Diff selected file against HEAD (see `peovim.plugins.gitsigns`; requires no `git status` entry) |
+| `<leader>dp` | `ExplorerDiffPrevious` | Explorer focused | Show selected file's committed change in HEAD versus its first parent |
 | `R` | — | Explorer focused | Refresh tree |
 | `<CR>` | — | Explorer focused | Open selected file |
 | `A`–`Z` (any case) | — | Explorer focused, >1 split | Open selected file in the window marked with that letter's badge |
@@ -492,7 +499,8 @@ Requires `peovim.plugins.gitsigns`. Shows git change gutters and supports hunk n
 | `]c` | `GitsignsNextHunk` | Jump to next git hunk |
 | `[c` | `GitsignsPrevHunk` | Jump to previous git hunk |
 | `<leader>gs` | `GitsignsStatusPanel` | Toggle git status panel |
-| — | `GitsignsDiffHead` | Diff a file (default: active buffer) against HEAD; no default key, see `:GitDiffHead` — bound to `<leader>dw` in the Diff/Compare group above. Explorer-focused equivalent (diffs the *selected* file, not the active buffer): `ExplorerDiffHead`, bound to the same `<leader>dw` key with `scope="explorer"` — see the Explorer table above. |
+| `<leader>dw` | `GitsignsDiffHead` | Diff the active file against HEAD. Explorer and git panel bindings use the selected file. |
+| `<leader>dp` | `GitsignsDiffPrevious` | Diff HEAD (or the active revision snapshot) against its first parent. |
 
 > **Note:** `]c` / `[c` are also the default next/prev diff block keys in the compare plugin. If both plugins are loaded, whichever is loaded last wins for those keys. Remap one to avoid the conflict.
 
@@ -503,6 +511,8 @@ keymap.nmap("<leader>pg", "<Plug>GitsignsStatusPanel", desc="Git status panel")
 ```
 
 ### Git panel-local keys (while git panel is focused)
+
+The **Recent commits** section shows the latest 30 commits from HEAD. Expand a commit with Enter or a click to load its changed files. Renames display both paths. Root commits compare against an empty file; merge commits compare against their first parent.
 
 | Key | Action |
 |-----|--------|
@@ -518,6 +528,9 @@ keymap.nmap("<leader>pg", "<Plug>GitsignsStatusPanel", desc="Git status panel")
 | `u` (on status row) | Unstage file |
 | `x` (on status row) | Discard file changes |
 | `d` (on status row) | Diff file against working tree |
+| `<CR>` / `d` (on commit file) | Diff selected commit against its first parent |
+| `<leader>dw` | Diff selected revision (HEAD for status files) against working file (`GitsignsPanelDiffWorking`) |
+| `<leader>dp` | Diff selected commit (HEAD for status files) against its first parent (`GitsignsPanelDiffPrevious`) |
 | `l` | Open git log browser for current branch |
 | `<CR>` | Open selected file |
 
@@ -959,6 +972,7 @@ See [§Plugin: Proposed Edit Review](#plugin-proposed-edit-review) for review ke
 | `:GitLog [ref]` | Open scratch git log browser |
 | `:GitDiffFile <path>` | Diff git status file against HEAD |
 | `:GitDiffHead [path]` | Diff a file (default: active buffer) against HEAD — works even with no working-tree changes |
+| `:GitDiffPrevious [path]` | Show committed changes between HEAD and its first parent; uses the source revision inside a historical snapshot |
 | `:GitStageFile <path>` | Stage file |
 | `:GitUnstageFile <path>` | Unstage file |
 | `:GitDiscardFile <path>` | Discard file changes |

@@ -988,6 +988,7 @@ git.repo_state(path: Path | None = None) -> GitRepoState | None
 git.list_branches(path: Path | None = None, *, include_remote: bool = False) -> list[GitBranchInfo]
 git.remotes(path: Path | None = None) -> list[GitRemote]
 git.log_entries(path: Path | None = None, *, limit: int = 30, ref: str | None = None) -> list[GitLogEntry]
+git.commit_files(ref: str, *, path: Path | None = None) -> list[GitStatusEntry]  # versus first parent; supports root commits and renames
 git.show_file_text(repo_path: Path, *, path: Path | None = None, ref: str = 'HEAD') -> str | None
 
 # Mutation operations
