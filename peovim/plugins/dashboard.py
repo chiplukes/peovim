@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+from functools import partial
 from typing import TYPE_CHECKING
 
 from peovim.config.loader import preferred_user_config_path
 
 if TYPE_CHECKING:
     from peovim.api.editor import EditorAPI
+    from peovim.api.window_api import WindowAPI
 
 _LOGO = """\
   ███████╗██████╗
@@ -47,6 +49,10 @@ def setup(api: EditorAPI) -> None:
 
     # Track recently opened files
     def _on_buf_opened(**kwargs) -> None:
+        # Explorer, :edit, and other openers bypass the dashboard's own actions.
+        # Release its temporary keys before the first key in the opened file.
+        if dashboard._active and not dashboard.is_active():
+            dashboard._deactivate()
         buf_id = kwargs.get("buf_id")
         if buf_id is None:
             return
@@ -63,30 +69,6 @@ def setup(api: EditorAPI) -> None:
         if dashboard.is_active():
             dashboard.open_selected()
 
-    # e / q are only active while the dashboard is shown.
-    # They are registered on show() and unregistered on close() so they don't
-    # shadow global vim motions (e = move to word-end, q = macro).
-    # h is intentionally NOT bound here — it's a core vim motion (move left).
-    def _on_close(**_kw) -> None:
-        if not dashboard.is_active():
-            # Stale binding left over when user navigated away without using the
-            # dashboard's own close mechanism (e.g. via an ex command).
-            dashboard._deactivate()
-            return
-        dashboard.close()
-
-    def _on_open_config(**_kw) -> None:
-        if not dashboard.is_active():
-            # Stale binding left over from a previous session — clean it up.
-            with contextlib.suppress(Exception):
-                api.keymap.nunmap("i")
-            return
-        dashboard.open_config()
-
-    # Store callback on the dashboard so show/close can register/unregister.
-    dashboard._on_close_cb = _on_close
-    dashboard._on_open_config_cb = _on_open_config
-
     api.keymap.nmap("<CR>", _on_cr, desc="Dashboard: open item")
 
 
@@ -97,21 +79,25 @@ class _Dashboard:
         self._api = api
         self._buf_id: int | None = None
         self._active = False
+        self._window: WindowAPI | None = None
+        self._was_modifiable = True
         # List of (kind, value) for selectable rows
         self._items: list[tuple[str, str]] = []
         # line index → item index
         self._line_to_item: dict[int, int] = {}
-        # Callback set by setup() after construction
-        self._on_close_cb: object = None
-        self._on_open_config_cb: object = None
 
     # ------------------------------------------------------------------
     # Public
     # ------------------------------------------------------------------
 
     def show(self) -> None:
+        if self._active:
+            self._deactivate()
         win = self._api.active_window()
         buf = self._api.active_buffer()
+        self._window = win
+        modifiable = win.get_option("modifiable")
+        self._was_modifiable = True if modifiable is None else bool(modifiable)
         self._buf_id = buf.buf_id
         self._active = True
         self._items = []
@@ -125,11 +111,9 @@ class _Dashboard:
             first_text_col = len(content.splitlines()[first_line]) - len(content.splitlines()[first_line].lstrip())
             win.set_cursor(first_line, first_text_col)
         # Register dashboard-only keys that shadow vim motions
-        if self._on_close_cb is not None:
-            self._api.keymap.nmap("e", self._on_close_cb, desc="Dashboard: close")
-            self._api.keymap.nmap("q", self._on_close_cb, desc="Dashboard: close")
-        if self._on_open_config_cb is not None:
-            self._api.keymap.nmap("i", self._on_open_config_cb, desc="Dashboard: open init")
+        for key in ("e", "q", "i"):
+            desc = "Dashboard: open init" if key == "i" else "Dashboard: close"
+            self._api.keymap.nmap(key, partial(self._handle_shortcut, key), desc=desc)
 
     def is_active(self) -> bool:
         if not self._active:
@@ -138,8 +122,6 @@ class _Dashboard:
 
     def close(self) -> None:
         self._deactivate()
-        win = self._api.active_window()
-        win.set_option("modifiable", True)
         self._api.active_buffer().set_text("")
 
     def open_selected(self) -> None:
@@ -174,11 +156,27 @@ class _Dashboard:
     # Private
     # ------------------------------------------------------------------
 
+    def _handle_shortcut(self, key: str) -> None:
+        if not self.is_active():
+            # Window switches need not emit buffer_opened. If one left a stale
+            # shortcut behind, clean up and process this same key normally.
+            self._deactivate()
+            self._api.keymap.feed_keys(key)
+        elif key == "i":
+            self.open_config()
+        else:
+            self.close()
+
     def _deactivate(self) -> None:
         """Clear active state and unregister dashboard-only key bindings."""
+        if self._window is not None:
+            with contextlib.suppress(Exception):
+                self._window.set_option("modifiable", self._was_modifiable)
+            self._window = None
         self._active = False
         self._buf_id = None
         self._items = []
+        self._line_to_item = {}
         # Each nunmap in its own suppress so a failure on one doesn't skip the rest.
         with contextlib.suppress(Exception):
             self._api.keymap.nunmap("e")
@@ -192,7 +190,6 @@ class _Dashboard:
         if not file_path.exists():
             return
         self._deactivate()
-        self._api.active_window().set_option("modifiable", True)
         self._api.open_buffer(file_path)
 
     def _load_session(self, name: str) -> None:
@@ -200,8 +197,6 @@ class _Dashboard:
             self._api.ui.notify("Session plugin not available (add peovim.plugins.session to init.py)", level="warn")
             return
         self._deactivate()
-        with contextlib.suppress(Exception):
-            self._api.active_window().set_option("modifiable", True)
         self._api.commands.execute(f"SessionLoad {name}")
 
     def _render(self) -> str:

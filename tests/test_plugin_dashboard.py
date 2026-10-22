@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
+
 from peovim.api.editor import EditorAPI
 from peovim.commands.builtin import register_builtins
 from peovim.commands.registry import CommandRegistry
@@ -16,8 +18,11 @@ from peovim.core.shada import ShadaStore
 from peovim.core.window import Window
 from peovim.core.workspace import Workspace
 from peovim.modal.dispatcher import ActionDispatcher
-from peovim.modal.engine import ModalEngine
+from peovim.modal.engine import ModalEngine, Mode
 from peovim.plugins.dashboard import _Dashboard, setup
+from peovim.ui.backend import KeyEvent
+from peovim.ui.backends.headless import HeadlessBackend
+from peovim.ui.event_loop import EventLoop
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -36,7 +41,8 @@ def _make_api(file_path: pathlib.Path | None = None) -> EditorAPI:
     register_builtins(command_registry)
     engine = ModalEngine()
     engine.set_document(doc)
-    dispatcher = ActionDispatcher(engine, window, registers, editor_state=editor_state)
+    engine.set_context_provider(lambda: workspace.active_window)
+    dispatcher = ActionDispatcher(engine, window, registers, editor_state=editor_state, workspace=workspace)
     dispatcher._command_registry = command_registry
     return EditorAPI(workspace, engine, dispatcher, editor_state, command_registry)
 
@@ -205,6 +211,113 @@ class TestDashboardOpenRecentFile:
 
 
 class TestDashboardKeybindings:
+    def test_explorer_open_then_first_i_enters_insert(self, tmp_path, monkeypatch):
+        from peovim.plugins import explorer
+
+        target = tmp_path / "peovim" / "main.py"
+        target.parent.mkdir()
+        original = "\n".join(f"# line {n}" for n in range(1, 13)) + "\n"
+        target.write_text(original)
+        api = _make_api_with_shada(tmp_path)
+        monkeypatch.setattr(api, "find_root", lambda: tmp_path)
+        loop = EventLoop(
+            HeadlessBackend(), api._engine, api._dispatcher, api._workspace, editor_state=api._editor_state
+        )
+        api.attach_event_loop(loop)
+        loop.attach_ui(api.ui, api.binding_registry)
+
+        def press(*keys):
+            for key in keys:
+                loop._handle_key_event(KeyEvent(key))
+
+        try:
+            setup(api)
+            explorer.setup(api)
+            api.events.emit("editor_ready")
+            assert api.active_window().get_option("modifiable") is False
+            press(api.keymap.leader, "e")
+            tree = api.ui.get_sidebar_panel("explorer").tree
+            press("j")  # skip the parent-directory entry
+            assert tree.selected_node.value == str(target.parent)
+            press("<CR>", "j", "j")  # expanded directory also has a parent entry
+            assert tree.selected_node.value == str(target)
+            press("<CR>")
+            assert api.active_buffer().path == target
+            assert api.active_window().get_option("modifiable") is True
+            assert not {"i", "e", "q"} & {b.keys for b in api.keymap.get_bindings("normal")}
+            press(*(["j"] * 7))
+            assert api.active_window().cursor == (7, 0)
+            assert not api.ui._sidebar.focused
+
+            press("i")
+
+            assert api.active_mode == Mode.INSERT
+            assert api.active_window().get_option("modifiable") is True
+            press("X", "<Esc>")
+            assert api.active_buffer().get_line(7) == "X# line 8"
+            assert target.read_text() == original
+        finally:
+            api.ui._log_output_tab.detach()
+            loop._executor.shutdown(wait=True)
+            loop._render_executor.shutdown()
+
+    @pytest.mark.parametrize("key", ["i", "e", "q"])
+    def test_first_dashboard_shortcut_in_existing_window_keeps_normal_meaning(self, tmp_path, key):
+        target = tmp_path / "other.py"
+        target.write_text("alpha beta\n")
+        api = _make_api_with_shada(tmp_path)
+        setup(api)
+        api.events.emit("editor_ready")
+        # Model switching to an existing window without buffer_opened. This
+        # exercises the fallback even when an opener did not emit that event.
+        other = api._workspace.active_tab.split_vertical()
+        other.document = Document(path=target)
+        other.document.load(target)
+        other.cursor.move_to(0, 0)
+        api.activate_window(other)
+
+        api.keymap.feed_keys(key)
+
+        if key == "i":
+            assert api.active_mode == Mode.INSERT
+        elif key == "e":
+            assert api.active_window().cursor == (0, 4)
+        else:
+            api.keymap.feed_keys("a")
+            assert api._engine._recording
+            api.keymap.feed_keys("q")
+        assert api.active_buffer().path == target
+
+    def test_dashboard_i_still_opens_init(self, tmp_path, monkeypatch):
+        config_path = tmp_path / "config" / "init.py"
+        monkeypatch.setattr("peovim.plugins.dashboard.preferred_user_config_path", lambda: config_path)
+        api = _make_api_with_shada(tmp_path)
+        setup(api)
+        api.events.emit("editor_ready")
+
+        api.keymap.feed_keys("i")
+
+        assert api.active_buffer().path == config_path
+        assert api.active_mode == Mode.NORMAL
+        assert api.active_window().get_option("modifiable") is True
+
+    def test_open_in_other_window_restores_only_dashboard_window_options(self, tmp_path):
+        target = tmp_path / "other.py"
+        target.write_text("other\n")
+        api = _make_api_with_shada(tmp_path)
+        setup(api)
+        api.events.emit("editor_ready")
+        dashboard_window = api.active_window()
+        assert dashboard_window.get_option("modifiable") is False
+        other = dashboard_window.split("v")
+        other.set_option("modifiable", False)
+
+        api.open_buffer(target)
+
+        assert dashboard_window.get_option("modifiable") is True
+        assert other.get_option("modifiable") is False
+        assert not {"i", "e", "q"} & {b.keys for b in api.keymap.get_bindings("normal")}
+
     def test_number_key_does_nothing_when_not_active(self, tmp_path):
         """Pressing 1 when dashboard is not active should not raise or open files."""
         api = _make_api_with_shada(tmp_path, recent_files=["/a.py"])
