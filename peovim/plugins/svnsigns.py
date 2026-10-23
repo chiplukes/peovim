@@ -3,7 +3,7 @@ Gutter signs and diff view for Subversion (SVN) working copies.
 
 Detects .svn directories, parses `svn diff` output, and places per-line
 signs identical in style to gitsigns.  Also provides a side-by-side diff
-view (original from `svn cat` vs current file) and a status sidebar panel.
+view, a status sidebar panel, and expandable recent revision history.
 
 No write operations (commit/add/revert) are included.
 
@@ -19,15 +19,21 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import logging
+import re
 import shutil
 import subprocess
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote, unquote
+from xml.etree import ElementTree as ET
 
 from peovim.core.diffing import parse_hunks as _parse_hunks
+from peovim.core.persistence import atomic_write_text
 from peovim.plugins import vcssigns as _vcs
 
 if TYPE_CHECKING:
@@ -53,6 +59,18 @@ _HUNK_TYPE_TO_SIGN = {
 _debounce_timers: dict[int, Any] = {}
 _status_panel: _SvnStatusPanel | None = None
 _diff_temp_dir: tempfile.TemporaryDirectory | None = None  # type: ignore[type-arg]
+_revision_sources: dict[Path, _SvnRevision] = {}
+
+
+@dataclass(frozen=True)
+class _SvnRevision:
+    root: Path
+    file_path: Path
+    url: str
+    revision: int
+    action: str = ""
+    copyfrom_url: str | None = None
+    copyfrom_revision: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -80,20 +98,24 @@ def _find_svn_root(path: str | Path) -> Path | None:
     return candidate
 
 
-def _svn_run(args: list[str], cwd: str | None = None) -> str:
-    """Run an svn subcommand and return stdout.  Returns '' on error."""
+def _svn_run(args: list[str], cwd: str | None = None, *, check: bool = False) -> str:
+    """Return stdout; errors propagate with check=True, otherwise return ''."""
     try:
         result = subprocess.run(  # noqa: S603
             ["svn", *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             cwd=cwd,
-            check=False,
+            check=check,
         )
-        return result.stdout
+        return result.stdout if result.returncode == 0 else ""
     except Exception as exc:
         _log.debug("svn %s failed: %s", args[0] if args else "?", exc)
+        if check:
+            raise
         return ""
 
 
@@ -112,8 +134,68 @@ def _safe_get_hunks(path: str | Path) -> list[dict]:
 
 def _get_original_content(path: str | Path) -> str | None:
     """Fetch BASE revision content via `svn cat`."""
-    output = _svn_run(["cat", "--", str(path)])
-    return output if output else None
+    try:
+        return _svn_run(["cat", "-r", "BASE", "--", f"{path}@"], check=True)
+    except Exception:
+        return None
+
+
+def _svn_info(path: Path) -> ET.Element:
+    xml = _svn_run(["info", "--xml", "--", f"{path}@"], check=True)
+    entry = ET.fromstring(xml).find("entry")
+    if entry is None:
+        raise ValueError("SVN returned no file information")
+    return entry
+
+
+def _working_revision(file_path: Path, root: Path) -> _SvnRevision:
+    entry = _svn_info(file_path)
+    if entry.get("kind") != "file":
+        raise ValueError("Select a versioned file")
+    if entry.findtext("wc-info/schedule") == "add":
+        raise ValueError("File has no committed revision yet")
+    revision = int(entry.get("revision", "0"))
+    url = entry.findtext("url")
+    if not url or revision < 1:
+        raise ValueError("File has no committed revision yet")
+    return _SvnRevision(root, file_path, url, revision)
+
+
+def _revision_content(url: str, revision: int) -> str | None:
+    if revision < 1:
+        return None
+    try:
+        return _svn_run(["cat", "-r", str(revision), "--", f"{url}@{revision}"], check=True)
+    except subprocess.CalledProcessError as exc:
+        # Only a missing repository path represents an empty side. Connection,
+        # authentication, and other failures must be reported instead.
+        if re.search(r"[EW](160013|195012)\b", exc.stderr or ""):
+            return None
+        raise
+
+
+def _revision_details(source: _SvnRevision) -> _SvnRevision:
+    """Resolve add/copy history for a BASE revision before comparing its parent."""
+    if source.revision < 1:
+        raise ValueError("No previous revision")
+    repository_url = _svn_info(source.root).findtext("repository/root")
+    if not repository_url or not source.url.startswith(repository_url.rstrip("/") + "/"):
+        raise ValueError("Cannot determine repository path")
+    repo_path = unquote(source.url[len(repository_url.rstrip("/")) :])
+    xml = _svn_run(
+        ["log", "--xml", "--verbose", "-r", str(source.revision), "--", f"{source.url}@{source.revision}"],
+        check=True,
+    )
+    for changed in ET.fromstring(xml).findall("logentry/paths/path"):
+        if changed.text == repo_path:
+            copyfrom = changed.get("copyfrom-path")
+            return replace(
+                source,
+                action=changed.get("action", "M"),
+                copyfrom_url=repository_url.rstrip("/") + quote(copyfrom, safe="/") if copyfrom else None,
+                copyfrom_revision=int(changed.attrib["copyfrom-rev"]) if copyfrom else None,
+            )
+    return replace(source, action="M")
 
 
 _VERSIONED_CODES = frozenset("MADC")
@@ -238,6 +320,7 @@ class _SvnStatusPanel:
         self._cwd = cwd
         self.width = width
         self._tree = TreeView([], title="SVN", width=width)
+        self._history_node: Any = None
 
     # --- Panel protocol ---
 
@@ -254,13 +337,23 @@ class _SvnStatusPanel:
 
     def feed_key(self, key: str) -> bool:
         if key == "R":
+            self._history_node = None
             self.refresh()
             return True
-        # <CR> / l → open diff for M/C, open file otherwise
+        if key == "?":
+            self._api.ui.notify(
+                "SVN: Enter/l/d diff file; <leader>dw vs working; <leader>dp vs previous; o open file; R refresh",
+                level="info",
+            )
+            return True
+        # <CR> / l → expand revision/section, or diff the selected file
         # o       → always open the file in a buffer
-        if key in ("<CR>", "l"):
+        if key in ("<CR>", "l", "d"):
             node = self._tree.selected_node
-            if node is not None and node.value is not None:
+            if node is not None and node.has_children():
+                if key != "d":
+                    self._tree.toggle(node)
+            elif node is not None and node.value is not None:
                 self._activate(node.value, diff=True)
             return True
         if key == "o":
@@ -279,7 +372,9 @@ class _SvnStatusPanel:
             return False
         self._tree._selected_idx = vis_idx
         node, _depth = visible[vis_idx]
-        if node.value is not None:
+        if node.has_children():
+            self._tree.toggle(node)
+        elif node.value is not None:
             self._activate(node.value, diff=True)
         return True
 
@@ -311,28 +406,165 @@ class _SvnStatusPanel:
             self._tree.set_nodes([TreeNode(label="No SVN working copy", icon="", fg=(128, 128, 128))])
             return
         entries = _get_status(self._cwd)
-        if not entries:
-            self._tree.set_nodes([TreeNode(label="Working copy is clean", icon="", fg=(128, 128, 128))])
-            return
         nodes: list[TreeNode] = []
         for e in entries:
             code = e["status"]
             label = e["path"]
             fg = self._STATUS_COLOR.get(code, (200, 200, 200))
             nodes.append(TreeNode(label=label, icon=code, fg=fg, value=e))
-        self._tree.set_nodes(nodes)
+        selected = self._tree.selected_node
+        status = TreeNode(label="Status", children_fn=lambda: nodes, expanded=True)
+        if not nodes:
+            nodes.append(TreeNode(label="Working copy is clean", fg=(128, 128, 128)))
+        if self._history_node is None:
+            # Loading history can contact the repository. Do it only when the
+            # user explicitly expands this section, not on every buffer event.
+            self._history_node = TreeNode(label="Recent revisions", children_fn=self._history_nodes)
+        self._tree.set_nodes([status, self._history_node])
+        if selected is not None and selected.value is not None:
+            self._tree.select_value(selected.value)
 
-    def _activate(self, entry: dict, *, diff: bool) -> None:
-        """Open diff (for M/C) or just open the file in the editor."""
-        code = entry.get("status", "")
-        file_path = self._cwd / entry["path"]
-        with contextlib.suppress(Exception):
+    def _history_nodes(self) -> list[Any]:
+        from peovim.ui.tree_view import TreeNode
+
+        try:
+            info = _svn_info(self._cwd)
+            repository_url = info.findtext("repository/root")
+            scope = unquote(info.findtext("relative-url", "^/")[1:]).rstrip("/")
+            if not repository_url:
+                raise ValueError("SVN returned no repository URL")
+            xml = _svn_run(["log", "--xml", "--verbose", "--limit", "30", "--", f"{self._cwd}@"], check=True)
+            nodes = []
+            for entry in ET.fromstring(xml).findall("logentry"):
+                revision = int(entry.attrib["revision"])
+                files = []
+                next_scope = scope
+                for changed in entry.findall("paths/path"):
+                    repo_path = changed.text or ""
+                    if repo_path == scope and changed.get("kind") == "dir":
+                        relative = ""
+                    elif repo_path.startswith(scope + "/"):
+                        relative = repo_path[len(scope) + 1 :]
+                    else:
+                        continue
+                    # Repository names are untrusted; keep local targets inside
+                    # the panel's scope, including on Windows.
+                    local = (self._cwd / relative).resolve()
+                    if not local.is_relative_to(self._cwd.resolve()):
+                        continue
+                    copyfrom = changed.get("copyfrom-path")
+                    source = _SvnRevision(
+                        _find_svn_root(self._cwd) or self._cwd,
+                        local,
+                        repository_url.rstrip("/") + quote(repo_path, safe="/"),
+                        revision,
+                        changed.get("action", "M"),
+                        repository_url.rstrip("/") + quote(copyfrom, safe="/") if copyfrom else None,
+                        int(changed.attrib["copyfrom-rev"]) if copyfrom else None,
+                    )
+                    if changed.get("kind") == "dir":
+                        if repo_path == scope and copyfrom:
+                            next_scope = copyfrom.rstrip("/")
+                        if source.action in ("A", "D", "R"):
+                            files.append(
+                                TreeNode(
+                                    label=(relative or ".") + "/",
+                                    icon=source.action,
+                                    children_fn=partial(self._directory_nodes, source),
+                                )
+                            )
+                    else:
+                        label = f"{relative} ← {copyfrom} @r{source.copyfrom_revision}" if copyfrom else relative
+                        files.append(
+                            TreeNode(
+                                label=label, icon=source.action, value=source, fg=self._STATUS_COLOR.get(source.action)
+                            )
+                        )
+                message = entry.findtext("msg", "").splitlines()
+                subject = message[0] if message else "(no message)"
+                author = entry.findtext("author", "")
+                date = entry.findtext("date", "")[:10]
+                nodes.append(
+                    TreeNode(
+                        label=f"r{revision} {subject} · {author} · {date}",
+                        children_fn=partial(list, files or [TreeNode(label="No changed files in this directory")]),
+                    )
+                )
+                scope = next_scope
+            return nodes or [TreeNode(label="No revisions yet")]
+        except Exception as exc:
+            _log.debug("SVN history failed", exc_info=True)
+            return [TreeNode(label=f"Cannot load revisions: {exc}")]
+
+    def _directory_nodes(self, directory: _SvnRevision) -> list[Any]:
+        from peovim.ui.tree_view import TreeNode
+
+        revision = directory.revision - 1 if directory.action == "D" else directory.revision
+        try:
+
+            def file_names(number: int) -> set[str]:
+                xml = _svn_run(
+                    ["list", "--xml", "--recursive", "-r", str(number), "--", f"{directory.url}@{number}"], check=True
+                )
+                return {
+                    e.findtext("name", "") for e in ET.fromstring(xml).findall("list/entry") if e.get("kind") == "file"
+                }
+
+            current = file_names(revision)
+            previous = file_names(revision - 1) if directory.action == "R" else set()
+            nodes = []
+            for name in sorted(current | previous):
+                if not name:
+                    continue
+                local = (directory.file_path / name).resolve()
+                if not local.is_relative_to(self._cwd.resolve()):
+                    continue
+                source = replace(
+                    directory,
+                    file_path=local,
+                    url=directory.url.rstrip("/") + "/" + quote(name, safe="/"),
+                    copyfrom_url=directory.copyfrom_url.rstrip("/") + "/" + quote(name, safe="/")
+                    if directory.copyfrom_url
+                    else None,
+                )
+                if directory.action == "R":
+                    action = "D" if name not in current else "A" if name not in previous else "R"
+                    source = replace(source, action=action, copyfrom_url=None, copyfrom_revision=None)
+                nodes.append(
+                    TreeNode(label=name, icon=source.action, value=source, fg=self._STATUS_COLOR.get(source.action))
+                )
+            return nodes or [TreeNode(label="No files in this directory")]
+        except Exception as exc:
+            return [TreeNode(label=f"Cannot load files: {exc}")]
+
+    def diff_selected(self, *, previous: bool) -> None:
+        node = self._tree.selected_node
+        if node is None or node.value is None:
+            return
+        source = node.value if isinstance(node.value, _SvnRevision) else None
+        path = source.file_path if source else self._cwd / node.value["path"]
+        opened = (
+            _open_diff_previous(self._api, path, source=source)
+            if previous
+            else _open_diff(self._api, path, source=source)
+        )
+        if opened:
             self._api.ui.blur_sidebar()
-        if diff and code in ("M", "C"):
-            _open_diff(self._api, file_path)
+
+    def _activate(self, entry: dict | _SvnRevision, *, diff: bool) -> None:
+        """Diff a revision/status file, or open its working file."""
+        file_path = entry.file_path if isinstance(entry, _SvnRevision) else self._cwd / entry["path"]
+        if diff:
+            if isinstance(entry, _SvnRevision):
+                opened = _open_diff_previous(self._api, file_path, source=entry)
+            else:
+                opened = _open_diff(self._api, file_path)
+            if opened:
+                self._api.ui.blur_sidebar()
         elif file_path.exists():
             with contextlib.suppress(Exception):
                 self._api.open_buffer(file_path)
+                self._api.ui.blur_sidebar()
 
 
 # ---------------------------------------------------------------------------
@@ -349,48 +581,121 @@ def _update_signs(api: Any, buf: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _open_diff(api: Any, file_path: Path | None = None) -> None:
-    """Open a side-by-side diff of *file_path* (default: active buffer) vs SVN BASE."""
+def _diff_path(api: Any, file_path: Path | None) -> Path | None:
     if file_path is None:
-        buf = api.active_buffer()
-        if buf.path is None:
+        path = getattr(api.active_buffer(), "path", None)
+        if path is None:
             api.ui.notify("SVN diff: buffer has no file path", level="warn")
-            return
-        file_path = Path(buf.path)
-    if _find_svn_root(file_path) is None:
-        api.ui.notify("Not in an SVN working copy", level="warn")
-        return
+            return None
+        file_path = Path(path)
+    return file_path.resolve()
 
-    original = _get_original_content(file_path)
-    if original is None:
-        api.ui.notify("SVN diff: file is not under version control or has no BASE", level="warn")
-        return
 
-    # Write original to a temp file so compare can open it as a real buffer.
-    # Keep the original filename (not the extension) so that filetype detection
-    # and syntax highlighting work correctly in the diff pane.
+def _snapshot(
+    api: Any, root: Path, file_path: Path, bucket: str, text: str, source: _SvnRevision | None = None
+) -> Path:
     global _diff_temp_dir
     if _diff_temp_dir is None:
         _diff_temp_dir = tempfile.TemporaryDirectory(prefix="peovim_svn_")
+    relative = file_path.relative_to(root)
+    root_key = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:16]
+    if source is not None:
+        bucket += "-" + hashlib.sha256(source.url.encode("utf-8")).hexdigest()[:12]
+    path = Path(_diff_temp_dir.name) / root_key / bucket / relative
+    atomic_write_text(path, text, encoding="utf-8")
+    if source is not None:
+        _revision_sources[path.resolve()] = source
+    _refresh_loaded_document(api, path)
+    return path
 
-    tmp_dir = Path(_diff_temp_dir.name) / "base"
-    tmp_dir.mkdir(exist_ok=True)
-    tmp_path = tmp_dir / file_path.name  # same extension → correct syntax
-    tmp_path.write_text(original, encoding="utf-8", errors="replace")
-    _refresh_loaded_document(api, tmp_path)
-    _refresh_loaded_document(api, file_path, if_clean=True)
 
-    # Emit the standard diff_selection_ready event (compare plugin handles this)
-    # If compare plugin is not loaded, open a simple vsplit manually.
-    listeners = _count_diff_listeners(api)
-    if listeners:
-        api.events.emit(
-            "diff_selection_ready",
-            left=str(tmp_path),
-            right=str(file_path),
-        )
+def _launch_diff(api: Any, left: Path, right: Path) -> bool:
+    _refresh_loaded_document(api, right, if_clean=True)
+    if _count_diff_listeners(api):
+        api.events.emit("diff_selection_ready", left=str(left), right=str(right))
     else:
-        _open_manual_diff(api, tmp_path, file_path)
+        _open_manual_diff(api, left, right)
+    return True
+
+
+def _open_diff(api: Any, file_path: Path | None = None, *, source: _SvnRevision | None = None) -> bool:
+    """Compare a selected revision (BASE by default) against the working file."""
+    file_path = _diff_path(api, file_path)
+    if file_path is None:
+        return False
+    source = source or _revision_sources.get(file_path)
+    if source is not None:
+        file_path = source.file_path
+    root = source.root if source else _find_svn_root(file_path)
+    if root is None:
+        api.ui.notify("Not in an SVN working copy", level="warn")
+        return False
+    if file_path.is_dir():
+        api.ui.notify("SVN diff requires a file, not a directory", level="warn")
+        return False
+    try:
+        if source is not None:
+            original = None if source.action == "D" else _revision_content(source.url, source.revision)
+            bucket = f"r{source.revision}"
+        else:
+            original = _get_original_content(file_path)
+            if original is None:
+                info = _svn_info(file_path)
+                if info.findtext("wc-info/schedule") != "add":
+                    raise ValueError("File is not under version control or has no BASE")
+            bucket = "base"
+            # Keep the source of BASE snapshots so commands also work when a
+            # historical pane is the active buffer. This reads local metadata.
+            with contextlib.suppress(Exception):
+                source = _working_revision(file_path, root)
+        left = _snapshot(api, root, file_path, bucket, original or "", source)
+        right = file_path if file_path.exists() else _snapshot(api, root, file_path, "working", "", source)
+        return _launch_diff(api, left, right)
+    except Exception as exc:
+        api.ui.notify(f"SVN diff failed: {exc}", level="error")
+        return False
+
+
+def _open_diff_previous(api: Any, file_path: Path | None = None, *, source: _SvnRevision | None = None) -> bool:
+    """Compare a selected revision (BASE by default) with its predecessor."""
+    file_path = _diff_path(api, file_path)
+    if file_path is None:
+        return False
+    source = source or _revision_sources.get(file_path)
+    if source is None:
+        root = _find_svn_root(file_path)
+        if root is None:
+            api.ui.notify("Not in an SVN working copy", level="warn")
+            return False
+        try:
+            source = _working_revision(file_path, root)
+        except Exception as exc:
+            api.ui.notify(f"SVN diff failed: {exc}", level="error")
+            return False
+    try:
+        if not source.action:
+            source = _revision_details(source)
+        previous_url = source.copyfrom_url if source.action == "A" and source.copyfrom_url else source.url
+        previous_revision = (
+            source.copyfrom_revision
+            if source.action == "A" and source.copyfrom_revision is not None
+            else source.revision - 1
+        )
+        previous = (
+            None
+            if source.action == "A" and not source.copyfrom_url
+            else _revision_content(previous_url, previous_revision)
+        )
+        current = None if source.action == "D" else _revision_content(source.url, source.revision)
+        left_source = _SvnRevision(source.root, source.file_path, previous_url, previous_revision)
+        left = _snapshot(
+            api, source.root, source.file_path, f"r{previous_revision}-previous", previous or "", left_source
+        )
+        right = _snapshot(api, source.root, source.file_path, f"r{source.revision}", current or "", source)
+        return _launch_diff(api, left, right)
+    except Exception as exc:
+        api.ui.notify(f"SVN diff failed: {exc}", level="error")
+        return False
 
 
 def _refresh_loaded_document(api: Any, path: Path, *, if_clean: bool = False) -> None:
@@ -594,7 +899,16 @@ def setup(api: EditorAPI) -> None:
     api.events.on("buffer_changed", lambda **kw: _on_buf_changed(api, **kw))
 
     # Commands
-    api.commands.register("SvnDiff", lambda cmd, ctx: _open_diff(api))
+    api.commands.register(
+        "SvnDiff", lambda cmd, ctx: _open_diff(api, Path(cmd.args.strip()) if cmd.args.strip() else None)
+    )
+    api.commands.register(
+        "SvnDiffWorking", lambda cmd, ctx: _open_diff(api, Path(cmd.args.strip()) if cmd.args.strip() else None)
+    )
+    api.commands.register(
+        "SvnDiffPrevious",
+        lambda cmd, ctx: _open_diff_previous(api, Path(cmd.args.strip()) if cmd.args.strip() else None),
+    )
     api.commands.register("SvnStatus", lambda cmd, ctx: _toggle_status(api))
     api.commands.register("SvnNextHunk", lambda cmd, ctx: _next_hunk(api))
     api.commands.register("SvnPrevHunk", lambda cmd, ctx: _prev_hunk(api))
@@ -606,6 +920,29 @@ def setup(api: EditorAPI) -> None:
     _nmap(api, "<leader>sd", lambda: _open_diff(api), "SVN: diff view")
     _nmap(api, "<leader>sp", lambda: _hunk_preview(api), "SVN: hunk preview")
     _nmap(api, "<leader>ss", lambda: _toggle_status(api), "SVN: status panel")
+
+    api.keymap.define_plug("SvnsignsDiffWorking", lambda: _open_diff(api), desc="SVN: diff BASE vs working file")
+    api.keymap.define_plug("SvnsignsDiffPrevious", lambda: _open_diff_previous(api), desc="SVN: diff BASE vs previous")
+    api.keymap.define_plug(
+        "SvnsignsPanelDiffWorking", lambda: _panel_diff(api, previous=False), desc="SVN: diff revision vs working file"
+    )
+    api.keymap.define_plug(
+        "SvnsignsPanelDiffPrevious", lambda: _panel_diff(api, previous=True), desc="SVN: diff revision vs previous"
+    )
+    # Scoped defaults supersede global defaults in the keymap registry. Restore
+    # Git's defaults after these variants if Git/explorer already installed them.
+    restore = []
+    for keys, panel_plug, git_plug in (
+        ("<leader>dw", "SvnsignsPanelDiffWorking", "GitsignsDiffHead"),
+        ("<leader>dp", "SvnsignsPanelDiffPrevious", "GitsignsDiffPrevious"),
+    ):
+        if keys in api.keymap.find_keys_for_plug(git_plug):
+            restore.append((keys, git_plug))
+        description = "SVN: diff vs working file" if keys.endswith("dw") else "SVN: diff vs previous revision"
+        api.keymap.nmap(keys, f"<Plug>{panel_plug}", desc=description, scope="svn-status")
+    for keys, plug in restore:
+        description = "Diff working file vs HEAD" if keys.endswith("dw") else "Diff HEAD vs parent"
+        api.keymap.nmap(keys, f"<Plug>{plug}", desc=description)
 
     # Initial sign pass for already-open buffers
     for buf in api.list_buffers():
@@ -619,6 +956,7 @@ def teardown() -> None:
             handle.cancel()
     _debounce_timers.clear()
     _status_panel = None
+    _revision_sources.clear()
     if _diff_temp_dir is not None:
         with contextlib.suppress(Exception):
             _diff_temp_dir.cleanup()
@@ -649,3 +987,9 @@ def _toggle_status(api: Any) -> None:
             api.ui.hide_sidebar()
         else:
             api.ui.show_sidebar("svn-status")
+
+
+def _panel_diff(api: Any, *, previous: bool) -> None:
+    panel = api.ui.get_sidebar_panel("svn-status")
+    if panel is not None:
+        panel.diff_selected(previous=previous)

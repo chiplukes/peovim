@@ -261,6 +261,12 @@ The side-by-side diff workflow supports:
 - merging the active block left→right or right→left
 - refreshing the diff after saves
 
+With `peovim.plugins.svnsigns` loaded, `<leader>ss` opens the SVN panel. Expand
+**Recent revisions**, then expand a revision to browse its changed files.
+On a file, `<leader>dw` compares the selected revision with the working copy;
+`<leader>dp` compares it with the previous revision. Status files use BASE as the
+selected revision. Enter opens the appropriate diff, and `o` opens the working file.
+
 ---
 
 ## LSP features

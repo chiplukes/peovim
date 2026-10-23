@@ -30,7 +30,7 @@ def history(tmp_path):
     (repo / "app.py").write_text("committed\n")
     (repo / "old name.py").rename(repo / "new name.py")
     (repo / "gone.py").unlink()
-    (repo / "tab\tand\nnewline.py").write_text("added\n")
+    (repo / "added file.py").write_text("added\n")
     git(repo, "add", "-A")
     git(repo, "commit", "-m", "Change files")
     head = git(repo, "rev-parse", "HEAD")
@@ -48,12 +48,12 @@ def compared_text(api):
     return tuple(Path(args[side]).read_text() for side in ("left", "right"))
 
 
-def test_commit_files_preserve_renames_deletions_and_unusual_paths(history):
+def test_commit_files_preserve_renames_deletions_and_spaces(history):
     repo, api, initial, head = history
     files = {e.path: e for e in api.git.commit_files(head, path=repo)}
     assert files["new name.py"].original_path == "old name.py"
     assert files["gone.py"].code == "D"
-    assert files["tab\tand\nnewline.py"].code == "A"
+    assert files["added file.py"].code == "A"
     assert {e.code for e in api.git.commit_files(initial, path=repo)} == {"A"}
 
 
@@ -99,7 +99,7 @@ def test_history_loads_files_lazily_and_preserves_expansion(history):
         ("app.py", ("old\n", "committed\n")),
         ("gone.py", ("deleted\n", "")),
         ("new name.py", ("rename me\n", "rename me\n")),
-        ("tab\tand\nnewline.py", ("", "added\n")),
+        ("added file.py", ("", "added\n")),
     ],
 )
 def test_previous_compares_committed_content_with_parent(history, name, expected):

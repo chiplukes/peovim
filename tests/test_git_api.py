@@ -282,6 +282,22 @@ class TestStatusAndBranchQueries:
 
 
 class TestGitCommands:
+    def test_commit_files_preserve_control_characters_in_git_output(self, tmp_path):
+        from peovim.api.git_api import GitAPI
+        from peovim.git.repository import GitStatusEntry
+
+        # Git can report names from another platform. Exercise its NUL-delimited
+        # output without creating filenames that Windows cannot represent.
+        output = "A\0tab\tand\nnewline.py\0R100\0old\tname.py\0new\nname.py\0D\0gone\nfile.py\0"
+        with patch("subprocess.run", return_value=_run_result(output)):
+            entries = GitAPI().commit_files("HEAD", path=tmp_path)
+
+        assert entries == [
+            GitStatusEntry("A", "tab\tand\nnewline.py", "A", " "),
+            GitStatusEntry("R", "new\nname.py", "R", " ", "old\tname.py"),
+            GitStatusEntry("D", "gone\nfile.py", "D", " "),
+        ]
+
     def test_git_commands_force_utf8_decoding(self, tmp_path):
         from peovim.api.git_api import GitAPI
 

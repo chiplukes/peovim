@@ -770,6 +770,11 @@ keymap.nmap("<leader>pH", "<Plug>LocalHistoryPicker", desc="Local history picker
 
 Requires `peovim.plugins.svnsigns` and `svn` on `PATH`.
 
+The panel shows working-copy status and **Recent revisions**. Expand that section
+to load up to 30 revisions affecting the launch directory. Each revision expands
+to its changed files; copied or deleted directories can also be expanded to
+browse their files. Loading history and older contents may contact the SVN server.
+
 | Key | Action |
 |-----|--------|
 | `]h` | Next SVN hunk |
@@ -782,9 +787,24 @@ Requires `peovim.plugins.svnsigns` and `svn` on `PATH`.
 
 | Key | Action |
 |-----|--------|
-| `<CR>` / `l` | Open diff for M/C entries, open file otherwise |
-| `o` | Open file in buffer (no diff) |
-| `R` | Refresh status |
+| `<CR>` / `l` | Expand a section/revision, or open the selected file's diff |
+| `d` | Diff a status file against working, or a revision file against previous |
+| `<leader>dw` | Compare selected revision (BASE for status files) with the working file |
+| `<leader>dp` | Compare selected revision (BASE for status files) with revision N−1 |
+| `o` | Open the selected file's working copy without a diff |
+| `R` | Refresh status and clear cached history; expand Recent revisions to reload it |
+| `?` | Show panel key guide |
+
+Copies/moves compare against their copy source. Added/deleted files use an empty
+side when appropriate, including files from the first revision. Unsaved working
+buffer edits are preserved in the comparison.
+
+The scoped shortcuts use `<Plug>SvnsignsPanelDiffWorking` and
+`<Plug>SvnsignsPanelDiffPrevious`, alongside the Git/explorer variants. For the
+active editor file, use `:SvnDiffWorking [path]` (also `:SvnDiff [path]`) or
+`:SvnDiffPrevious [path]`. Their plug targets are `SvnsignsDiffWorking` and
+`SvnsignsDiffPrevious`. Status-file previous comparisons use the file's checked-out
+BASE revision and its predecessor; they do not include local edits.
 
 ---
 
