@@ -24,7 +24,7 @@ repos:
         types: [python]
     -   id: mypy
         name: mypy
-        entry: uv run mypy peovim/
+        entry: uv run --extra dev python -m mypy peovim/
         language: system
         pass_filenames: false
         types: [python]
