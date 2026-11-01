@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from peovim.ui.backend import ATTR_BOLD, Color
 from peovim.ui.cell_grid import CellGrid
+from peovim.ui.icons import path_label
 from peovim.ui.layout import Rect
 
 if TYPE_CHECKING:
@@ -113,8 +114,11 @@ def render_status_bar(
             fname = str(doc.path)
     else:
         fname = doc.path.name
-    if doc.dirty:
-        fname += " [+]"
+    icons = editor_state.options.get("icons") or "auto" if editor_state is not None else "auto"
+    plain_fname = fname + (" [+]" if doc.dirty else "")
+    fname = path_label(plain_fname, doc.path, mode=icons)
+    if len(fname) > right_col - x - len(left) - 1:
+        fname = plain_fname
 
     # Right-align boundary: don't overlap right segment
     available_end = right_col

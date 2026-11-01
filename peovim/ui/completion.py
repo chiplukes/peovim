@@ -8,6 +8,7 @@ Escape/Ctrl-e to dismiss, arrows to navigate.
 from __future__ import annotations
 
 from peovim.ui.cell_grid import CellGrid
+from peovim.ui.icons import completion_icon
 
 _BG = (30, 30, 46)
 _FG = (205, 214, 244)
@@ -41,11 +42,12 @@ _KIND_LABELS = {
     17: "ref",
     18: "fil",
     19: "fld",
-    20: "cst",
-    21: "str",
-    22: "evt",
-    23: "op ",
-    24: "typ",
+    20: "enm",
+    21: "cst",
+    22: "str",
+    23: "evt",
+    24: "op ",
+    25: "typ",
 }
 
 
@@ -62,6 +64,7 @@ class CompletionPopup:
     """
 
     def __init__(self) -> None:
+        self.icons: str = "auto"
         self._items: list[dict] = []
         self._selected: int = 0
         self._scroll: int = 0
@@ -204,7 +207,8 @@ class CompletionPopup:
             fg = _FG_SELECTED if is_sel else _FG
 
             kind = item.get("kind", 1)
-            kind_label = _KIND_LABELS.get(kind, "   ")
+            kind_label = completion_icon(kind, mode=self.icons) or _KIND_LABELS.get(kind, "   ")
+            kind_label = kind_label.ljust(3)
             label = item.get("label", "")
             detail = item.get("detail", "")
 

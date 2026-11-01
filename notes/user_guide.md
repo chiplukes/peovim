@@ -50,7 +50,8 @@ options.set("wrap", True)
 ## Optional icons
 
 Peovim uses a small set of file and folder icons in the explorer and file/buffer
-pickers. The default `icons` mode is `auto`: Nerd Font icons appear when
+pickers, symbol icons in the outline and completion menu, colored severity icons
+in diagnostics, and a filetype icon beside the status-line filename. The default `icons` mode is `auto`: Nerd Font icons appear when
 `TERM_PROGRAM` identifies WezTerm, except with `TERM=dumb`. Other environments
 keep plain labels. This is a conservative terminal hint, not a font-coverage test;
 SSH or tmux may hide that identity. A leftover `WEZTERM_PANE` alone is not enough.

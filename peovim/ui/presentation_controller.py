@@ -314,6 +314,9 @@ class OverlayPresentationController:
                         cur_screen_row = rect.y + row
                         cur_screen_col = rect.x + gutter + col
                     break
+            host._completion_popup.icons = (
+                host._editor_state.options.get("icons") or "auto" if host._editor_state else "auto"
+            )
             host._completion_popup.render(grid, cur_screen_row, cur_screen_col)
         except Exception as exc:
             host._report_runtime_error("completion popup render", exc)

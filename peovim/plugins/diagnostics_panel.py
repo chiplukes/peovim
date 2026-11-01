@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from peovim.api.editor import EditorAPI
     from peovim.ui.tree_view import TreeNode
 
+_SEVERITY_COLORS = {"E": (244, 71, 71), "W": (229, 192, 123), "I": (97, 175, 239), "H": (152, 195, 121)}
+
 _PANEL_NAME = "diagnostics"
 _panel: _DiagnosticsSidebarPanel | None = None
 
@@ -58,6 +60,7 @@ class _DiagnosticsSidebarPanel:  # cm:b3e5d8
             diagnostics,
             expanded_values=expanded_values,
             current_path=current_path,
+            icons=self._api.options.get("icons") or "auto",
         )
         self._tree.set_nodes(nodes or _message_nodes("No diagnostics"))
         if selected_value is not None:
@@ -175,6 +178,7 @@ def _build_diagnostic_nodes(
     *,
     expanded_values: set[tuple[str, str]] | None = None,
     current_path: str | None = None,
+    icons: str = "auto",
 ) -> list[TreeNode]:
     from peovim.ui.tree_view import TreeNode
 
@@ -190,7 +194,8 @@ def _build_diagnostic_nodes(
         children = [
             TreeNode(
                 label=_diagnostic_label(item),
-                icon=_severity_icon(str(item.get("severity", ""))),
+                icon=_severity_icon(str(item.get("severity", "")), mode=icons),
+                icon_fg=_SEVERITY_COLORS.get(str(item.get("severity", "")).upper()),
                 value=(path, int(item.get("line", 0)), int(item.get("col", 0))),
             )
             for item in items
@@ -213,7 +218,12 @@ def _diagnostic_label(item: dict[str, Any]) -> str:
     return f"{line}:{col} {message}"
 
 
-def _severity_icon(severity: str) -> str:
+def _severity_icon(severity: str, *, mode: str = "auto") -> str:
+    from peovim.ui.icons import diagnostic_icon
+
+    icon = diagnostic_icon(severity, mode=mode)
+    if icon:
+        return icon
     icons = {
         "E": "err",
         "W": "warn",

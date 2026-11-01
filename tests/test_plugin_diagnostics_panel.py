@@ -75,6 +75,7 @@ class TestDiagnosticsPanelPlugin:
 
     def test_refresh_builds_grouped_nodes_from_diagnostics(self, monkeypatch):
         api = _make_api()
+        api.options.set("icons", "off")
         monkeypatch.setattr(
             api,
             "list_diagnostics",

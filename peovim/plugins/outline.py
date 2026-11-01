@@ -88,7 +88,9 @@ class _OutlineSidebarPanel:
             if selected_path:
                 expanded_values.update(_symbol_value(symbol) for symbol in selected_path[:-1])
                 selected_value = _symbol_value(selected_path[-1])
-            nodes = _build_outline_nodes(symbols, expanded_values=expanded_values)
+            nodes = _build_outline_nodes(
+                symbols, expanded_values=expanded_values, icons=self._api.options.get("icons") or "auto"
+            )
             self._tree._title = title
             self._tree.set_nodes(nodes or _message_nodes("No document symbols"))
             if selected_value is not None:
@@ -183,17 +185,19 @@ def _message_nodes(message: str) -> list[TreeNode]:
     return [TreeNode(label=message)]
 
 
-def _build_outline_nodes(symbols: list[dict], *, expanded_values: set[tuple] | None = None) -> list[TreeNode]:
+def _build_outline_nodes(
+    symbols: list[dict], *, expanded_values: set[tuple] | None = None, icons: str = "auto"
+) -> list[TreeNode]:
     from peovim.ui.tree_view import TreeNode
 
     expanded_values = expanded_values or set()
     nodes = []
     for index, symbol in enumerate(symbols):
-        children = _build_outline_nodes(symbol.get("children", []), expanded_values=expanded_values)
+        children = _build_outline_nodes(symbol.get("children", []), expanded_values=expanded_values, icons=icons)
         value = _symbol_value(symbol)
         node = TreeNode(
             label=str(symbol.get("name", "")),
-            icon=_symbol_icon(str(symbol.get("kind", ""))),
+            icon=_symbol_icon(str(symbol.get("kind", "")), mode=icons),
             value=value,
             children_fn=(lambda items=children: items) if children else None,  # type: ignore[misc]
         )
@@ -255,7 +259,12 @@ def _symbol_value(symbol: dict) -> tuple:
     )
 
 
-def _symbol_icon(kind: str) -> str:
+def _symbol_icon(kind: str, *, mode: str = "auto") -> str:
+    from peovim.ui.icons import symbol_icon
+
+    icon = symbol_icon(kind, mode=mode)
+    if icon:
+        return icon
     icons = {
         "class": "cls",
         "function": "fn",

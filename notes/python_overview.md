@@ -164,6 +164,7 @@ Nothing outside `ui/` imports from here directly (plugins use `api.ui`).
 | `cell_grid.py` | `CellGrid` — 2D array of `(char, fg, bg, attrs)`; per-cell dirty tracking; `flush() -> list[RenderOp]` |
 | `window_renderer.py` | `render_window(snapshot, rect, ...) -> CellGrid` — pure; handles gutter, syntax, HighlightRegion, OverlayChar, VirtualText, VirtualLine, GhostText, Sign, folds, indent guides, colorcolumn |
 | `decorations.py` | Decoration types: `HighlightRegion`, `VirtualText`, `VirtualLine`, `Sign`, `InlayHint`, `GhostText`, `OverlayChar`, `CodeLens`, `Conceal`; `virtual_line_spans_for_document(...)` — shared VirtualLine lookup for scroll/cursor-row math |
+| `icons.py` | Optional file, symbol, completion, and diagnostic icons with WezTerm auto-detection and manual overrides |
 | `markdown.py` | `render_markdown(text) -> list[str]` — strips markdown for hover float display |
 | `float_manager.py` | `FloatManager` — positioned floats; z-ordering; focused float keyboard routing; `CursorRelative`/`Centered`/`Absolute` anchors |
 | `target_chooser.py` | `TargetChooser` + `ChooserTarget` — lettered-badge chooser (A/B/C) over arbitrary targets; pushed as a transient key interceptor; used by the explorer file-open chooser and `<leader>wg` goto |

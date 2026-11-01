@@ -152,3 +152,138 @@ def test_markdown_strong_excludes_code_and_handles_utf8_and_multiline():
     spans = controller._host._syntax_cache[id(win.document)][1]
     strong = [s for s in spans if s.group == "markdown.strong"]
     assert [(s.start_line, s.start_col, s.end_line, s.end_col) for s in strong] == [(0, 3, 0, 11), (2, 0, 3, 7)]
+
+
+def test_diagnostic_icons_preserve_locations_and_text_fallbacks():
+    from peovim.plugins.diagnostics_panel import _build_diagnostic_nodes
+    from peovim.ui.icons import diagnostic_icon
+
+    diagnostics = [
+        {"path": "file.py", "line": i, "col": 2, "severity": severity, "message": "message"}
+        for i, severity in enumerate("EWIH")
+    ]
+    decorated = _build_diagnostic_nodes(diagnostics, icons="on")[0].get_children()
+    plain = _build_diagnostic_nodes(diagnostics, icons="off")[0].get_children()
+    assert [n.icon for n in plain] == ["err", "warn", "info", "hint"]
+    assert [n.icon for n in decorated] == [diagnostic_icon(s, mode="on") for s in "EWIH"]
+    assert [n.value for n in decorated] == [n.value for n in plain]
+    assert [n.label for n in decorated] == [n.label for n in plain]
+    assert all(n.icon_fg is not None for n in decorated)
+
+
+def test_outline_icons_propagate_to_children_and_preserve_unknown_kinds():
+    from peovim.plugins.outline import _build_outline_nodes
+    from peovim.ui.icons import symbol_icon
+
+    symbols = [
+        {
+            "name": "Example",
+            "kind": "class",
+            "line": 0,
+            "col": 0,
+            "children": [{"name": "run", "kind": "method", "line": 1, "col": 4}],
+        }
+    ]
+    decorated = _build_outline_nodes(symbols, icons="on")[0]
+    plain = _build_outline_nodes(symbols, icons="off")[0]
+    assert plain.icon == "cls"
+    assert decorated.icon == symbol_icon("class", mode="on")
+    assert decorated.get_children()[0].icon == symbol_icon("method", mode="on")
+    assert plain.get_children()[0].icon == "meth"
+    assert decorated.value == plain.value
+    assert decorated.get_children()[0].value == plain.get_children()[0].value
+    assert _build_outline_nodes([{"name": "x", "kind": "unknown"}], icons="on")[0].icon == "unk"
+
+
+@pytest.mark.parametrize(
+    "kind,name", [(20, "enum"), (21, "const"), (22, "struct"), (23, "event"), (24, "operator"), (25, "type")]
+)
+def test_completion_icons_use_lsp_kind_numbers(kind, name):
+    from peovim.ui.icons import completion_icon, symbol_icon
+
+    assert completion_icon(kind, mode="on") == symbol_icon(name, mode="on")
+    assert completion_icon(kind, mode="off") == ""
+    assert completion_icon(999, mode="on") == ""
+
+
+def test_completion_icons_keep_label_position_and_insert_text():
+    from peovim.ui.cell_grid import CellGrid
+    from peovim.ui.completion import CompletionPopup
+    from peovim.ui.icons import completion_icon
+
+    rendered = []
+    for mode in ("on", "off"):
+        popup = CompletionPopup()
+        popup.icons = mode
+        popup.open([{"label": "calculate", "kind": 3, "insertText": "calculate()"}], 0, 0)
+        grid = CellGrid(50, 10)
+        popup.render(grid, 0, 0)
+        text = "".join(grid.read_cell(2, c)[0] for c in range(grid.width))
+        rendered.append(text)
+        assert popup.accept() == "calculate()"
+    assert completion_icon(3, mode="on") in rendered[0]
+    assert "fn " in rendered[1]
+    assert rendered[0].index("calculate") == rendered[1].index("calculate")
+
+
+def test_status_line_icons_preserve_dirty_marker_and_coordinates(tmp_path):
+    from peovim.core.document import Document
+    from peovim.core.editor_state import EditorState
+    from peovim.core.window import Window
+    from peovim.modal.engine import Mode
+    from peovim.ui.cell_grid import CellGrid
+    from peovim.ui.layout import Rect
+    from peovim.ui.status_bar import render_status_bar
+
+    doc = Document()
+    doc.load_string("hello")
+    doc.path = tmp_path / "example.py"
+    doc.insert(0, 0, "x")
+    win = Window(doc)
+    state = EditorState()
+    for mode in ("on", "off"):
+        state.options.set("icons", mode)
+        grid = CellGrid(60, 1)
+        render_status_bar(win, Mode.NORMAL, Rect(0, 0, 60, 1), grid, editor_state=state)
+        text = "".join(grid.read_cell(0, c)[0] for c in range(grid.width))
+        assert "example.py [+]" in text
+        assert "1:1" in text
+        assert (path_icon(doc.path, mode="on") in text) is (mode == "on")
+
+
+def test_tree_icon_color_does_not_color_message_or_selection():
+    from peovim.ui.cell_grid import CellGrid
+    from peovim.ui.tree_view import TreeNode, TreeView
+
+    color = (244, 71, 71)
+    nodes = [TreeNode("selected"), TreeNode("message", icon="!", icon_fg=color)]
+    tree = TreeView(nodes, width=30)
+    grid = CellGrid(30, 3)
+    tree.render(grid)
+    text = "".join(grid.read_cell(1, c)[0] for c in range(grid.width))
+    icon_col = text.index("!")
+    assert grid.read_cell(1, icon_col)[1] == color
+    assert grid.read_cell(1, text.index("message"))[1] != color
+    tree._selected_idx = 1
+    tree.render(grid)
+    assert grid.read_cell(1, icon_col)[1] != color
+
+
+def test_status_line_drops_icon_before_hiding_filename(tmp_path):
+    from peovim.core.document import Document
+    from peovim.core.editor_state import EditorState
+    from peovim.core.window import Window
+    from peovim.modal.engine import Mode
+    from peovim.ui.cell_grid import CellGrid
+    from peovim.ui.layout import Rect
+    from peovim.ui.status_bar import render_status_bar
+
+    doc = Document()
+    doc.path = tmp_path / "example.py"
+    state = EditorState()
+    state.options.set("icons", "on")
+    grid = CellGrid(15, 1)
+    render_status_bar(Window(doc), Mode.NORMAL, Rect(0, 0, 15, 1), grid, editor_state=state)
+    text = "".join(grid.read_cell(0, c)[0] for c in range(grid.width))
+    assert "example.py" in text
+    assert path_icon(doc.path, mode="on") not in text

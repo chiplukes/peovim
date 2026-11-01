@@ -36,6 +36,7 @@ class TreeNode:
     # Optional multi-color label: list of (text, fg_color) tuples.
     # When set, overrides label+fg for non-selected rendering.
     label_segments: list[tuple[str, Any]] | None = None
+    icon_fg: Color = None
 
     def has_children(self) -> bool:
         """Return True if this node can have children."""
@@ -351,6 +352,12 @@ class TreeView:  # cm:e3f1b4
                     grid.write_str(row_idx, col, " " * remaining, fg=node.fg, bg=node.bg)
             else:
                 grid.write_str(row_idx, 0, text, fg=node.fg, bg=node.bg)
+
+            if not is_selected and node.icon and node.icon_fg is not None:
+                icon_col = len(indent + fold)
+                remaining = max(0, self._width - icon_col)
+                if remaining:
+                    grid.write_str(row_idx, icon_col, node.icon[:remaining], fg=node.icon_fg, bg=node.bg)
 
         for (index, col), label in self.flash_labels.items():
             row = start_row + index - self._scroll_top
