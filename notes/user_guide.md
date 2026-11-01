@@ -16,6 +16,68 @@ It is strongest today in these areas:
 
 ---
 
+## Reading Markdown and long paragraphs
+
+Enable soft word wrapping in the current window with `:set wrap`; turn it off
+with `:set nowrap`. Long lines break at word boundaries, and words wider than
+the window break across rows. This only changes the display: saving preserves
+the original paragraphs and line breaks. Resizing a split recalculates wrapping.
+
+Use `gj` and `gk` to move down and up by screen row, including in visual mode.
+Counts work (`3gj`), and the screen column is preserved across shorter rows.
+Ordinary `j`/`k`, line numbers, and line operations such as `dd`/`yy` still refer
+to file lines. Scrolling can move within a paragraph taller than the window.
+
+To wrap only selected filetypes, add this to `init.py`:
+
+```python
+options.set("wrap", False)
+options.set("wrapfiletypes", "markdown,text")
+```
+
+Use detected filetype names (such as `markdown`), rather than extensions (`md`).
+This default follows the document when switching buffers, opening splits, or
+restoring a session. An explicit `:set wrap` or `:set nowrap` overrides the default
+for that window. Remove an older `editor.on_filetype` wrapping hook if you have one;
+that hook sets a window override, which takes precedence over this default.
+
+To enable wrapping for all filetypes by default, use:
+
+```python
+options.set("wrap", True)
+```
+
+## Optional icons
+
+Peovim uses a small set of file and folder icons in the explorer and file/buffer
+pickers. The default `icons` mode is `auto`: Nerd Font icons appear when
+`TERM_PROGRAM` identifies WezTerm, except with `TERM=dumb`. Other environments
+keep plain labels. This is a conservative terminal hint, not a font-coverage test;
+SSH or tmux may hide that identity. A leftover `WEZTERM_PANE` alone is not enough.
+
+```python
+options.set("icons", "auto")  # "on" to force Nerd Font icons, "off" for plain labels
+```
+
+Markdown unordered lists display a red standard Unicode `•` in place of `-`, `*`,
+or `+`, without changing the file or requiring Nerd Fonts. The source markers
+appear on the cursor line and throughout visual selections. Parsed list markers
+are used, so code blocks and horizontal rules retain their source appearance.
+This requires Markdown syntax parsing to be available; source markers remain
+visible until a current parse is ready.
+
+```python
+options.set("markdownbullets", False)  # keep source markers everywhere
+```
+
+Strong emphasis (`**word**` or `__word__`) appears in light purple with bold
+styling, while retaining the source delimiters. Inline code and code blocks
+keep their existing appearance. Themes can override the `markdown.bullet`
+and `markdown.strong` groups; their defaults are red (`#F44747`) and light
+purple (`#CBA6F7`).
+
+These settings do not change the terminal font or its ligature settings.
+
 ## Installation
 
 ### As a standalone tool (recommended for regular use)

@@ -162,6 +162,8 @@ def render_window(
     # Build fold-header lookup: doc_line -> end_line for all closed folds
     fold_headers: dict[int, int] = {s: e for s, e in snapshot.closed_folds}
 
+    wrap_ranges_by_line: dict[int, list[tuple[int, int]]] = {}
+    wrap_row = max(0, snapshot.scroll_wrap_row) if options.get("wrap") else 0
     screen_row = 0
     doc_line = snapshot.scroll_line
 
@@ -196,8 +198,15 @@ def render_window(
         # Virtual lines anchored before buffer line 0 (after_line == -1).
         # Only visible when the viewport starts at line 0.
         if doc_line == 0 and vlines_by_anchor.get(-1):
+            leading_skip = 0
+            if options.get("wrap"):
+                leading_count = sum(v.count for v in vlines_by_anchor[-1])
+                leading_skip = max(0, leading_count + snapshot.scroll_wrap_row)
             for _vl in vlines_by_anchor[-1]:
                 for _ in range(_vl.count):
+                    if leading_skip:
+                        leading_skip -= 1
+                        continue
                     if screen_row >= rect.height:
                         break
                     _vl_bg = _vl.style.bg if _vl.style.bg is not None else base_bg
@@ -248,6 +257,21 @@ def render_window(
             doc_line = fold_end + 1  # skip past fold body
             continue
 
+        line_text = visible_lines.get(doc_line, "")
+        from peovim.ui.text_layout import wrapped_ranges
+
+        ranges = []
+        if options.get("wrap"):
+            if doc_line not in wrap_ranges_by_line:
+                wrap_ranges_by_line[doc_line] = wrapped_ranges(
+                    line_text,
+                    text_w,
+                    tabstop,
+                    include_eol=bool(options.get("_wrap_insert")) and doc_line == snapshot.cursor_line,
+                )
+            ranges = wrap_ranges_by_line[doc_line]
+        if ranges:
+            wrap_row = min(wrap_row, len(ranges) - 1)
         # --- Gutter ---
         if gutter_w > 0:
             # Sign column (leftmost 2 chars)
@@ -273,16 +297,23 @@ def render_window(
                     screen_row, _sign_w, padded, fg=gutter_style["fg"], bg=base_bg, attrs=gutter_style["attrs"]
                 )
 
+        if ranges and wrap_row > 0 and gutter_w:
+            _grid.fill(screen_row, 0, gutter_w, bg=base_bg)
+
         # --- Text content ---
         line_text = visible_lines.get(doc_line, "")
         scroll_display_col = _logical_col_to_display_col(line_text, snapshot.scroll_col, tabstop)
-        visible = _visible_text_slice(line_text, scroll_display_col, text_w, tabstop) if text_w > 0 else ""
+        row_width = text_w
+        if ranges:
+            scroll_display_col, row_end = ranges[wrap_row]
+            row_width = row_end - scroll_display_col
+        visible = _visible_text_slice(line_text, scroll_display_col, row_width, tabstop) if text_w > 0 else ""
         if text_w > 0:
             _grid.write_padded(screen_row, gutter_w, visible, text_w, fg=base_fg, bg=base_bg)
 
         # --- Virtual text (inline after buffer content) ---
         _vtexts = vtext_by_line.get(doc_line)
-        if _vtexts and text_w > 0:
+        if _vtexts and text_w > 0 and (not ranges or wrap_row == len(ranges) - 1):
             _used = len(visible)
             _remaining = text_w - _used
             if _remaining > 2:  # need at least a separator + one char
@@ -303,9 +334,10 @@ def render_window(
             _gcol = _logical_col_to_display_col(line_text, _ghost.col, tabstop) - scroll_display_col
             _gtext = _ghost.text
             _gstyle = _ghost.style
-            if _gcol < text_w and _gtext:
+            ghost_width = text_w if not ranges or wrap_row == len(ranges) - 1 else row_width
+            if 0 <= _gcol < ghost_width and _gtext:
                 # Truncate to available width
-                _avail = text_w - _gcol
+                _avail = ghost_width - _gcol
                 _display_g = _gtext[:_avail]
                 _grid.write_str(
                     screen_row,
@@ -327,14 +359,14 @@ def render_window(
                     gutter_w,
                     line_text,
                     scroll_display_col,
-                    text_w,
+                    row_width,
                     tabstop,
                     theme,
                     syntax_style_cache,
                 )
 
         # --- Indent guides ---
-        if indent_guides_mode != "none" and text_w > 0:
+        if indent_guides_mode != "none" and text_w > 0 and wrap_row == 0:
             guide_indent = _resolve_blank_line_indent(visible_lines, doc_line, visible_start, visible_end, tabstop)
             # When the terminal cursor is used (bar style), skip the guide at
             # the cursor column so the bar cursor is visible against plain text.
@@ -366,11 +398,11 @@ def render_window(
         if text_w > 0:
             for dec in highlight_by_line.get(doc_line, ()):
                 _apply_highlight(
-                    _grid, dec, doc_line, screen_row, gutter_w, line_text, scroll_display_col, text_w, tabstop
+                    _grid, dec, doc_line, screen_row, gutter_w, line_text, scroll_display_col, row_width, tabstop
                 )
             for dec in overlay_by_line.get(doc_line, ()):
                 sc = _logical_col_to_display_col(line_text, dec.col, tabstop) - scroll_display_col
-                if 0 <= sc < text_w:
+                if 0 <= sc < row_width:
                     existing = _grid.read_cell(screen_row, gutter_w + sc)
                     _grid.write(
                         screen_row,
@@ -386,13 +418,27 @@ def render_window(
             cursor_screen_col = (
                 _logical_col_to_display_col(line_text, snapshot.cursor_col, tabstop) - scroll_display_col
             )
-            if 0 <= cursor_screen_col < text_w:
+            from peovim.ui.text_layout import wrapped_position
+
+            cursor_wrap_row = (
+                wrapped_position(
+                    line_text, snapshot.cursor_col, text_w, tabstop, include_eol=bool(options.get("_wrap_insert"))
+                )[0]
+                if ranges
+                else 0
+            )
+            if 0 <= cursor_screen_col < text_w and cursor_wrap_row == wrap_row:
                 cell_col = gutter_w + cursor_screen_col
                 ch = visible[cursor_screen_col : cursor_screen_col + 1] or " "
                 style = CURSOR_ACTIVE if is_active else CURSOR_INACTIVE
                 _grid.write(screen_row, cell_col, ch, **style)
 
         screen_row += 1
+
+        if ranges and wrap_row + 1 < len(ranges):
+            wrap_row += 1
+            continue
+        wrap_row = 0
 
         # --- Virtual lines anchored after this buffer line ---
         for _vl in vlines_by_anchor.get(doc_line, ()):
@@ -406,7 +452,14 @@ def render_window(
         doc_line += 1
 
     if scrollbar_w:
-        _render_scrollbar(_grid, line_count, rect.height, snapshot.scroll_line, is_active, base_bg)  # type: ignore[arg-type]
+        _render_scrollbar(
+            _grid,
+            options.get("_wrap_row_count", line_count),
+            rect.height,
+            options.get("_wrap_top", snapshot.scroll_line),
+            is_active,
+            base_bg,  # type: ignore[arg-type]
+        )
 
     return _grid
 

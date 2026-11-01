@@ -188,6 +188,7 @@ class MoveCursor(Action):
     line: int
     col: int
     add_to_jumplist: bool = False
+    preserve_virtual: bool = True
 
 
 @dataclass(frozen=True)

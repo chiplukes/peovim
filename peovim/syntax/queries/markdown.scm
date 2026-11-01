@@ -37,3 +37,10 @@
 ] @punctuation.special
 
 (backslash_escape) @string.escape
+
+; Separate capture lets the UI decorate actual list markers without touching code or rules.
+[
+  (list_marker_plus)
+  (list_marker_minus)
+  (list_marker_star)
+] @punctuation.special.list

@@ -24,6 +24,7 @@ try:
     def render_window(*args, grid: CellGrid | None = None, **kwargs):  # type: ignore[misc]
         """Prefer native rendering, but fall back to pure rendering for unsupported features.
 
+        Wrapped windows use the pure renderer for screen-row layout.
         The native (Cython) renderer has no `VirtualLine` support at all — it
         doesn't index or paint that decoration type, so a window with
         virtual-line padding (compare.py's diff-alignment spacers, and
@@ -35,7 +36,9 @@ try:
         enabled globally, purely by coincidence.
         """
         snapshot = args[0] if args else kwargs.get("snapshot")
-        needs_pure = bool(getattr(snapshot, "options", {}).get("scrollbar"))
+        needs_pure = bool(
+            getattr(snapshot, "options", {}).get("scrollbar") or getattr(snapshot, "options", {}).get("wrap")
+        )
         if not needs_pure:
             decorations = args[3] if len(args) > 3 else kwargs.get("decorations")
             extra_decorations = args[6] if len(args) > 6 else kwargs.get("extra_decorations")

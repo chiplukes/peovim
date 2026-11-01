@@ -248,8 +248,14 @@ class MouseDispatcher:
             scroll_delta = 0
 
         if scroll_delta and line_count > 0:
-            max_scroll = max(0, line_count - window.height)
-            window.scroll_line = max(0, min(window.scroll_line + scroll_delta, max_scroll))
+            if window.wrap_enabled:
+                from peovim.ui.text_layout import set_wrap_top, window_wrap_rows, wrap_top_index
+
+                rows = window_wrap_rows(window, window.wrap_width, window.wrap_tabstop)
+                set_wrap_top(window, rows, max(0, min(wrap_top_index(window, rows) + scroll_delta, len(rows) - 1)))
+            else:
+                max_scroll = max(0, line_count - window.height)
+                window.scroll_line = max(0, min(window.scroll_line + scroll_delta, max_scroll))
 
         if line_count > 0:
             line, col = self._buffer_position_for_point(window, rect, event.row, event.col)
@@ -270,7 +276,7 @@ class MouseDispatcher:
             window,
             rect.height,
             scrollbar_scroll_line_for_thumb_top(
-                window.document.line_count(),
+                self._scroll_metrics(window)[0],
                 rect.height,
                 thumb_top,
             ),
@@ -305,6 +311,14 @@ class MouseDispatcher:
         if line_count <= 0:
             return 0, 0
 
+        if self._effective_option(window, "wrap", False):
+            from peovim.ui.text_layout import window_wrap_rows, wrap_top_index
+
+            rows = window_wrap_rows(window, window.wrap_width, int(self._effective_option(window, "tabstop", 4) or 4))
+            top = wrap_top_index(window, rows)
+            index = max(0, min(top + row - rect.y, len(rows) - 1))
+            line, start, end = rows[index]
+            text_display_col = min(start + text_display_col, max(start, end - 1)) if start >= 0 else 0
         line = max(0, min(line, line_count - 1))
         line_text = doc.get_line(line)
         tabstop = int(self._effective_option(window, "tabstop", 4) or 4)
@@ -323,7 +337,7 @@ class MouseDispatcher:
 
         local_row = event.row - rect.y
         thumb_top, thumb_height = scrollbar_thumb_range(
-            leaf.window.document.line_count(), rect.height, leaf.window.scroll_line
+            self._scroll_metrics(leaf.window)[0], rect.height, self._scroll_metrics(leaf.window)[1]
         )
         if thumb_top <= local_row < thumb_top + thumb_height:
             self._scrollbar_drag_offset = local_row - thumb_top
@@ -333,7 +347,7 @@ class MouseDispatcher:
                 leaf.window,
                 rect.height,
                 scrollbar_scroll_line_for_thumb_top(
-                    leaf.window.document.line_count(),
+                    self._scroll_metrics(leaf.window)[0],
                     rect.height,
                     local_row - self._scrollbar_drag_offset,
                 ),
@@ -375,7 +389,7 @@ class MouseDispatcher:
         if editor_state is None:
             return default
         global_options = editor_state.options.global_as_dict()
-        return global_options.get(name, default)
+        return window.effective_options(global_options).get(name, default)
 
     def _exit_visual_if_empty_selection(self) -> None:
         """After a drag release, exit visual mode if no text was actually selected."""
@@ -399,7 +413,22 @@ class MouseDispatcher:
                 tab.focus_window(leaf.window)
         self._dispatcher.window = leaf.window
 
+    def _scroll_metrics(self, window) -> tuple[int, int]:
+        if window.wrap_enabled:
+            from peovim.ui.text_layout import window_wrap_rows, wrap_top_index
+
+            rows = window_wrap_rows(window, window.wrap_width, window.wrap_tabstop)
+            return len(rows), wrap_top_index(window, rows)
+        return window.document.line_count(), window.scroll_line
+
     def _set_window_scroll(self, window, viewport_height: int, scroll_line: int) -> None:
+        if window.wrap_enabled:
+            from peovim.ui.text_layout import set_wrap_top, window_wrap_rows
+
+            rows = window_wrap_rows(window, window.wrap_width, window.wrap_tabstop)
+            set_wrap_top(window, rows, max(0, min(scroll_line, max(0, len(rows) - viewport_height))))
+            window.follow_cursor = False
+            return
         max_scroll = max(0, window.document.line_count() - viewport_height)
         window.scroll_line = max(0, min(scroll_line, max_scroll))
         window.follow_cursor = False

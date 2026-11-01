@@ -99,7 +99,7 @@ class WindowRenderController:  # cm:9d6c3f
             snapshot.scroll_line,
             snapshot.scroll_line + max(0, rect.height - 1),
         )
-        decorations = self.build_window_render_decorations(leaf.window, snapshot, is_active)
+        decorations = self.build_window_render_decorations(leaf.window, snapshot, is_active, theme=theme)
         return create_window_render_job(
             snapshot,
             rect,
@@ -113,6 +113,49 @@ class WindowRenderController:  # cm:9d6c3f
     def sync_window_render_state(self, window: Any, rect: Rect, *, global_opts: dict | None = None) -> None:
         window.width = rect.width
         window.height = rect.height
+        if global_opts is None:
+            global_opts = self._global_options_snapshot()
+        opts = window.effective_options(global_opts)
+        window.wrap_enabled = bool(opts.get("wrap"))
+        window.wrap_tabstop = int(opts.get("tabstop", 4) or 4)
+        from peovim.modal.engine import Mode
+
+        window.wrap_insert = getattr(getattr(self._host, "_engine", None), "mode", None) == Mode.INSERT
+        if window.wrap_enabled:
+            from peovim.ui.decorations import Sign
+            from peovim.ui.text_layout import set_wrap_top, window_wrap_rows, wrap_top_index, wrapped_position
+            from peovim.ui.window_renderer import _gutter_width
+
+            snapshot = window.snapshot(global_options=opts)
+            has_signs = any(isinstance(d, Sign) for d in self.get_window_extra_decorations(window))
+            window.wrap_width = max(
+                1,
+                rect.width
+                - _gutter_width(snapshot, window.document.line_count(), has_signs)
+                - int(bool(opts.get("scrollbar"))),
+            )
+            window.wrap_virtual_spans = self._virtual_line_spans(window)
+            rows = window_wrap_rows(window, window.wrap_width, window.wrap_tabstop)
+            top = wrap_top_index(window, rows)
+            cursor_row = wrapped_position(
+                window.document.get_line(window.cursor.line),
+                window.cursor.col,
+                window.wrap_width,
+                window.wrap_tabstop,
+                include_eol=window.wrap_insert,
+            )[0]
+            cursor = (
+                next((i for i, row in enumerate(rows) if row[0] == window.cursor.line and row[1] >= 0), 0) + cursor_row
+            )
+            if window.follow_cursor:
+                margin = min(int(opts.get("scrolloff", 0)), max(0, (rect.height - 1) // 2))
+                top = min(top, cursor - margin)
+                top = max(top, cursor + margin - rect.height + 1)
+            top = max(0, min(top, len(rows) - 1))
+            set_wrap_top(window, rows, top)
+            window.scroll_col = 0
+            return
+        window.scroll_wrap_row = 0
         spans = self._virtual_line_spans(window)
         line_count = window.document.line_count()
         if spans:
@@ -250,12 +293,51 @@ class WindowRenderController:  # cm:9d6c3f
         window: Any,
         snapshot: WindowSnapshot,
         is_active: bool,
+        *,
+        theme: Any = None,
     ) -> tuple[Any, ...]:
         decorations = list(self._build_search_decorations(snapshot))
         decorations.extend(self.get_window_extra_decorations(window))
+        decorations.extend(self._build_markdown_bullets(window, snapshot, theme=theme))
         if is_active:
             decorations.extend(self._build_visual_selection(snapshot))
         return tuple(decorations)
+
+    def _build_markdown_bullets(self, window: Any, snapshot: WindowSnapshot, *, theme: Any = None) -> list:
+        from peovim.modal.engine import Mode
+        from peovim.syntax.themes import MARKDOWN_STYLES
+        from peovim.ui.decorations import OverlayChar
+        from peovim.ui.window_renderer import _extract_visible_lines
+
+        if snapshot.buffer_snapshot.filetype != "markdown" or not snapshot.options.get("markdownbullets", True):
+            return []
+        if self._host._engine.mode in (Mode.VISUAL_CHAR, Mode.VISUAL_LINE, Mode.VISUAL_BLOCK):
+            return []
+        cached = self._host._syntax_cache.get(id(window.document))
+        if cached is None or cached[0] != snapshot.buffer_snapshot.version:
+            return []
+        start = snapshot.scroll_line
+        end = start + max(0, snapshot.height - 1)
+        lines = _extract_visible_lines(snapshot, start, end)
+        result = []
+        for span in self.resolve_window_highlight_spans(window.document, start, end):
+            if span.group != "punctuation.special.list":
+                continue
+            if span.start_line == snapshot.cursor_line:
+                continue
+            text = lines.get(span.start_line, "")
+            # Tree-sitter columns are bytes; editor overlays use character columns.
+            col = len(text.encode("utf-8")[: span.start_col].decode("utf-8", errors="replace"))
+            if text[col : col + 1] in ("-", "*", "+"):
+                result.append(
+                    OverlayChar(
+                        span.start_line,
+                        col,
+                        "•",
+                        theme.resolve("markdown.bullet") if theme is not None else MARKDOWN_STYLES["markdown.bullet"],
+                    )
+                )
+        return result
 
     def _build_visual_selection(self, snapshot: WindowSnapshot) -> list:
         """Build HighlightRegion decorations for the current visual selection."""

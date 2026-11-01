@@ -33,9 +33,12 @@ class OptionDef:
 
 _OPTION_DEFS: list[OptionDef] = [
     # --- display ---
+    OptionDef("icons", str, "auto", ("global",), lambda v: v in ("auto", "on", "off")),
+    OptionDef("markdownbullets", bool, True, ("global", "window")),
     OptionDef("number", bool, False, ("global", "window")),
     OptionDef("relativenumber", bool, False, ("global", "window")),
     OptionDef("wrap", bool, False, ("global", "window")),
+    OptionDef("wrapfiletypes", str, "", ("global",), doc="Comma-separated filetypes that default to soft wrapping"),
     OptionDef("cursorline", bool, False, ("global", "window")),
     OptionDef("cursorcolumn", bool, False, ("global", "window")),
     OptionDef("colorcolumn", str, "", ("global", "window")),

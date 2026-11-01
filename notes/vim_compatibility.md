@@ -34,7 +34,7 @@ Legend: **✓ implemented** | **~ partial** | **✗ not implemented**
 | Visual mode — `=`, `J`, filter | ✗ | |
 | Command-line (`:` ex commands — file, buffer, window, edit) | ~ | many Vim ex commands not registered (see details) |
 | `:set` options | ~ | generic pass-through; not all options affect rendering (see Options section) |
-| `g` commands | ~ | `gg`,`gv`,`ge`,`gE`,`gI`,`gd`,`gf`,`gt`,`gT`,`g~`,`gu`,`gU`,`g*`,`g#` done; `gj`,`gk`,`g0`,`g$`,`gD`,`gq`,`gw`,`g;`,`g,`,`gn`,`gN`,`gp`,`gP` not |
+| `g` commands | ~ | `gg`,`gv`,`ge`,`gE`,`gI`,`gd`,`gf`,`gt`,`gT`,`g~`,`gu`,`gU`,`g*`,`g#`,`gj`,`gk` done; `g0`,`g$`,`gD`,`gq`,`gw`,`g;`,`g,`,`gn`,`gN`,`gp`,`gP` not |
 | `z` scroll/fold commands | ~ | zz/zt/zb/zf/zo/zc/za/zR/zM/zd done; `z.` not |
 
 ---
@@ -556,7 +556,7 @@ several cases (e.g. `expandtab`, `tabstop`, `autoindent`, `hlsearch`, `scrolloff
 |---|---|---|---|
 | `number` / `nu` | bool | false | ✓ |
 | `relativenumber` / `rnu` | bool | false | ✓ |
-| `wrap` | bool | true | ✓ |
+| `wrap` | bool | false | ✓ |
 | `linebreak` / `lbr` | bool | false | ~ |
 | `cursorline` / `cul` | bool | false | ✓ |
 | `cursorcolumn` / `cuc` | bool | false | ~ |
@@ -609,7 +609,7 @@ explicit `i`/`I` flag, which overrides the options outright, same as Vim.
 
 ## `g` Commands
 
-_Status: ~ partial — implemented: `gg`, `ge`/`gE`, `gv`, `gI`, `gd`, `gf`, `gt`/`gT`, `g~`, `gu`, `gU`, `g*`, `g#`. Not implemented: `gD`, `gj`/`gk`, `g0`/`g$`/`g^`, `gm`, `gq`, `gw`, `g;`/`g,`, `gn`/`gN`, `gp`/`gP`._
+_Status: ~ partial — implemented: `gg`, `ge`/`gE`, `gv`, `gI`, `gd`, `gf`, `gt`/`gT`, `g~`, `gu`, `gU`, `g*`, `g#`, `gj`/`gk`. Not implemented: `gD`, `g0`/`g$`/`g^`, `gm`, `gq`, `gw`, `g;`/`g,`, `gn`/`gN`, `gp`/`gP`._
 
 | Key | Action | Status |
 |---|---|---|

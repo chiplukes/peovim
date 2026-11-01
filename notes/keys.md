@@ -8,6 +8,15 @@ Single source of truth for all keybindings. Other notes link here rather than du
 
 ---
 
+## Wrapped text
+
+| Key | Action |
+|-----|--------|
+| `gj` / `gk` | Move down / up one screen row (normal and visual modes; counts supported) |
+| `j` / `k` | Move down / up one file line |
+
+Enable wrapping with `:set wrap` and disable it with `:set nowrap`.
+
 ## How to Remap
 
 Every remappable binding has a `<Plug>Name` in the table below. Use `keymap.nmap` / `keymap.imap` / `keymap.vmap` in `init.py` to wire it to any key. Remove a default binding with `keymap.nunmap`.

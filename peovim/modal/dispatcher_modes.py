@@ -180,7 +180,7 @@ def handle_move_cursor(d: ActionDispatcher, action: MoveCursor, doc: Document, c
             d.window.scroll_line,
         )
 
-    if action.col == prev_col and action.line != prev_line:
+    if action.preserve_virtual and action.col == prev_col and action.line != prev_line:
         delta = action.line - prev_line
         if delta > 0:
             for _ in range(delta):
@@ -196,6 +196,39 @@ def handle_move_cursor(d: ActionDispatcher, action: MoveCursor, doc: Document, c
 
 
 def handle_scroll_view(d: ActionDispatcher, action: ScrollView, doc: Document, cur: Cursor) -> None:
+    if d.window.wrap_enabled:
+        from peovim.ui.text_layout import (
+            display_col_to_logical_col,
+            set_wrap_top,
+            window_wrap_rows,
+            wrap_top_index,
+            wrapped_position,
+        )
+
+        win = d.window
+        rows = window_wrap_rows(win, win.wrap_width, win.wrap_tabstop)
+        top = max(0, min(wrap_top_index(win, rows) + action.lines, len(rows) - 1))
+        set_wrap_top(win, rows, top)
+        win.follow_cursor = True
+        subrow, col = wrapped_position(doc.get_line(cur.line), cur.col, win.wrap_width, win.wrap_tabstop)
+        cursor = next((i for i, row in enumerate(rows) if row[0] == cur.line and row[1] >= 0), 0) + subrow
+        so = int(d._editor_state.options.get("scrolloff") or 0) if d._editor_state else 0
+        so = min(max(0, so), max(0, win.height - 1) // 2)
+        target = max(top + so, min(cursor, top + win.height - 1 - so, len(rows) - 1))
+        target = min(target, len(rows) - 1)
+        while rows[target][1] < 0 and target + 1 < len(rows):
+            target += 1
+        while rows[target][1] < 0 and target > 0:
+            target -= 1
+        if target != cursor:
+            line, start, end = rows[target]
+            cur.move_to(
+                line,
+                display_col_to_logical_col(doc.get_line(line), min(start + col, max(start, end - 1)), win.wrap_tabstop),
+            )
+            d._clamp_cursor_for_mode(doc)
+            d._emit_later("cursor_moved", buf_id=d._buf_id, line=cur.line, col=cur.col)
+        return
     lc = doc.line_count()
     d.window.follow_cursor = True
     d.window.scroll_line = max(0, min(d.window.scroll_line + action.lines, lc - 1))
@@ -266,6 +299,16 @@ def handle_scroll_view(d: ActionDispatcher, action: ScrollView, doc: Document, c
 
 def handle_scroll_to_cursor(d: ActionDispatcher, action: ScrollToCursor, doc: Document, cur: Cursor) -> None:
     d.window.follow_cursor = True
+    if d.window.wrap_enabled:
+        from peovim.ui.text_layout import set_wrap_top, window_wrap_rows, wrap_top_index, wrapped_cursor_offset
+
+        win = d.window
+        rows = window_wrap_rows(win, win.wrap_width, win.wrap_tabstop)
+        offset, _ = wrapped_cursor_offset(win, win.wrap_width, win.wrap_tabstop)
+        cursor = wrap_top_index(win, rows) + offset
+        shift = 0 if action.position == "top" else (win.height - 1 if action.position == "bottom" else win.height // 2)
+        set_wrap_top(win, rows, max(0, min(cursor - shift, len(rows) - 1)))
+        return
     line = cur.line
     if action.position == "top":
         d.window.scroll_line = line

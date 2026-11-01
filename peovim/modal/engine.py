@@ -268,6 +268,8 @@ class ModalEngine:  # cm:5c8e7a
         # or pulled from _provider at the start of each feed_key call.
         self._cursor: tuple[int, int] = (0, 0)
         self._line_count: int = 1
+        self._screen_row_last: tuple[int, int] | None = None
+        self._screen_row_goal: int = 0
         self._scroll_line: int = 0
         # Document reference for motion resolution (optional; motions degrade gracefully)
         self._document: Document | None = None
@@ -284,6 +286,31 @@ class ModalEngine:  # cm:5c8e7a
     # ------------------------------------------------------------------
     # External state setters (called by dispatcher)
     # ------------------------------------------------------------------
+
+    def _screen_row_motion(self, direction: int, count: int) -> tuple[int, int]:
+        from peovim.ui.text_layout import (
+            display_col_to_logical_col,
+            window_wrap_rows,
+            wrapped_position,
+        )
+
+        line, col = self._cursor
+        win = self._provider() if self._provider is not None else None
+        if win is None or not win.wrap_enabled:
+            return max(0, min(line + direction * count, self._line_count - 1)), col
+        rows = [row for row in window_wrap_rows(win, win.wrap_width, win.wrap_tabstop) if row[1] >= 0]
+        subrow, screen_col = wrapped_position(win.document.get_line(line), col, win.wrap_width, win.wrap_tabstop)
+        index = next((i for i, row in enumerate(rows) if row[0] == line), 0) + subrow
+        previous = getattr(self, "_screen_row_last", None)
+        goal = getattr(self, "_screen_row_goal", screen_col) if previous == self._cursor else screen_col
+        target = max(0, min(index + direction * count, len(rows) - 1))
+        target_line, start, end = rows[target]
+        target_col = display_col_to_logical_col(
+            win.document.get_line(target_line), min(start + goal, max(start, end - 1)), win.wrap_tabstop
+        )
+        self._screen_row_goal = goal
+        self._screen_row_last = (target_line, target_col)
+        return target_line, target_col
 
     def set_cursor(self, line: int, col: int) -> None:
         self._cursor = (line, col)
@@ -418,6 +445,8 @@ class ModalEngine:  # cm:5c8e7a
     def feed_key(self, key: str, remap: bool = True) -> list[Action]:
         """Process one key string. Returns list[Action] (empty while accumulating)."""
         self._sync_from_provider()
+        if key not in ("g", "j", "k") and not key.isdigit():
+            self._screen_row_last = None
         if self.mode == Mode.INSERT:
             actions = self._feed_insert(key, remap=remap)
         elif self.mode in (Mode.VISUAL_CHAR, Mode.VISUAL_LINE, Mode.VISUAL_BLOCK):
@@ -1054,6 +1083,11 @@ class ModalEngine:  # cm:5c8e7a
         # g-prefixed sequences
         if len(seq) == 2 and seq[0] == "g":
             ch = seq[1]
+            if ch in ("j", "k"):
+                screen_target = self._screen_row_motion(1 if ch == "j" else -1, state.effective_count())
+                if state.operator is not None:
+                    return self._resolve_operator_motion(state, self._cursor, screen_target, "char")
+                return [MoveCursor(*screen_target, preserve_virtual=False)]
             if ch == "g":
                 target = (state.effective_count_a() - 1) if state.count_a > 0 else 0
                 return [MoveCursor(target, 0, add_to_jumplist=True)]
@@ -1456,6 +1490,11 @@ class ModalEngine:  # cm:5c8e7a
             if seq_node is not None and seq_node.children:
                 return []
 
+            if len(seq) == 2 and seq[0] == "g" and seq[1] in ("j", "k"):
+                screen_target = self._screen_row_motion(1 if seq[1] == "j" else -1, state.effective_count_a())
+                state.key_buffer.clear()
+                state.count_a = 0
+                return [MoveCursor(*screen_target, preserve_virtual=False)]
             if seq == ["g", "g"]:
                 state.key_buffer.clear()
                 state.count_a = 0
@@ -1616,6 +1655,7 @@ class ModalEngine:  # cm:5c8e7a
                 target = count_a_raw - 1 if count_a_raw > 0 else self._line_count - 1
                 return [MoveCursor(target, col)]
             case "g":
+                state.count_a = count_a_raw
                 state.key_buffer = ["g"]
                 return []
             case "r":

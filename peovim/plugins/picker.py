@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from peovim.core.filetype import detect_filetype
 from peovim.syntax.themes import get_theme
+from peovim.ui.icons import path_label
 from peovim.ui.markdown import RichLine, render_rich_code_preview
 
 if TYPE_CHECKING:
@@ -130,7 +131,7 @@ def _find_files(api: Any) -> None:
     except Exception:
         paths = []
 
-    items = [_path_item(path, root) for path in paths]
+    items = [_path_item(path, root, icons=api.options.get("icons") or "auto") for path in paths]
 
     def _on_confirm(item: _PathItem) -> None:
         with contextlib.suppress(Exception):
@@ -147,7 +148,7 @@ def _find_files(api: Any) -> None:
 def _find_recent_files(api: Any) -> None:
     """Open a picker over recent files stored in shada."""
     root = _get_root(api)
-    items = [_path_item(path, root) for path in api.recent_files()]
+    items = [_path_item(path, root, icons=api.options.get("icons") or "auto") for path in api.recent_files()]
 
     api.ui.open_picker(
         "Recent Files",
@@ -167,7 +168,11 @@ def _find_buffers(api: Any) -> None:
     bufs = api.list_buffers()
     items = [
         _BufferItem(
-            str(buffer.path) if buffer.path else f"<buffer {buffer.buf_id}>",
+            path_label(
+                str(buffer.path) if buffer.path else f"<buffer {buffer.buf_id}>",
+                buffer.path,
+                mode=api.options.get("icons") or "auto",
+            ),
             buffer.path,
             tuple(_buffer_preview_lines(buffer)),
         )
@@ -315,8 +320,8 @@ def _display_path(path: Path, root: Path | None) -> str:
         return str(path)
 
 
-def _path_item(path: Path, root: Path | None) -> _PathItem:
-    return _PathItem(_display_path(path, root), path)
+def _path_item(path: Path, root: Path | None, *, icons: str = "auto") -> _PathItem:
+    return _PathItem(path_label(_display_path(path, root), path, mode=icons), path)
 
 
 def _word_under_cursor(api: Any) -> str:

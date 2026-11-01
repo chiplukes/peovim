@@ -110,6 +110,47 @@ def _reconstruct_text(snapshot: BufferSnapshot) -> bytes:
     return bytes(result)
 
 
+def _markdown_inline_spans(root, text: bytes, visible_end_line: int | None) -> list[HighlightSpan]:
+    """Parse inline regions identified by the block grammar, excluding code blocks."""
+    from tree_sitter import Parser, QueryCursor
+
+    from peovim.syntax.languages import LanguageInfo
+
+    info = LanguageInfo("markdown_inline", "tree_sitter_markdown", language_attr="inline_language")
+    lang = _get_language(info)
+    if lang is None:
+        return []
+    query = _get_query(info, lang)
+    if query is None:
+        return []
+    parser = Parser(lang)
+    spans = []
+    pending = [root]
+    while pending:
+        block = pending.pop()
+        if visible_end_line is not None and block.start_point[0] > visible_end_line:
+            continue
+        if block.type != "inline":
+            pending.extend(reversed(block.named_children))
+            continue
+        tree = parser.parse(text[block.start_byte : block.end_byte])
+        for group, nodes in QueryCursor(query).captures(tree.root_node).items():
+            for node in nodes:
+                sl, sc = node.start_point
+                el, ec = node.end_point
+                spans.append(
+                    HighlightSpan(
+                        block.start_point[0] + sl,
+                        sc + (block.start_point[1] if sl == 0 else 0),
+                        block.start_point[0] + el,
+                        ec + (block.start_point[1] if el == 0 else 0),
+                        group,
+                        priority=20,
+                    )
+                )
+    return spans
+
+
 def _parse_task(
     snapshot: BufferSnapshot,
     buffer_id: int = 0,
@@ -193,6 +234,9 @@ def _parse_task(
                 sp = node.start_point  # (row, col)
                 ep = node.end_point
                 spans.append(HighlightSpan(sp[0], sp[1], ep[0], ep[1], group, priority=priority))
+
+        if snapshot.filetype == "markdown":
+            spans.extend(_markdown_inline_spans(tree.root_node, text_bytes, visible_end_line))
 
         # Sort by position, then by priority (higher = painted later, wins overlap).
         spans.sort(key=lambda s: (s.start_line, s.start_col, s.priority))

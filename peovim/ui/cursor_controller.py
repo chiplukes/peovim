@@ -36,9 +36,7 @@ class TerminalCursorController:
         host = self._host
         active_window = host._workspace.active_window
         global_opts = host._editor_state.options.global_as_dict() if host._editor_state is not None else {}
-        resolved = dict(global_opts)
-        resolved.update(active_window.options)
-        return resolved
+        return active_window.effective_options(global_opts)
 
     def build_terminal_cursor_ops(self) -> list[RenderOp]:
         host = self._host
@@ -110,7 +108,7 @@ class TerminalCursorController:
             line_offset = buffer_line_to_visual_row(active_window.cursor.line, spans) - viewport_top_visual
         else:
             line_offset = active_window.cursor.line - active_window.scroll_line
-        if not (0 <= line_offset < active_rect.height):
+        if not resolved_options.get("wrap") and not (0 <= line_offset < active_rect.height):
             return None
 
         has_signs = False
@@ -130,6 +128,12 @@ class TerminalCursorController:
         scroll_display_col = logical_col_to_display_col(line_text, active_window.scroll_col, tabstop)
         cursor_display_col = logical_col_to_display_col(line_text, active_window.cursor.col, tabstop)
         cursor_col = cursor_display_col - scroll_display_col
+        if resolved_options.get("wrap"):
+            from peovim.ui.text_layout import wrapped_cursor_offset
+
+            line_offset, cursor_col = wrapped_cursor_offset(active_window, active_window.wrap_width, tabstop)
+        if not (0 <= line_offset < active_rect.height):
+            return None
         if not (0 <= cursor_col < text_width):
             return None
 

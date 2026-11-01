@@ -32,6 +32,14 @@ class Window:  # cm:8f2d5b
         self.document: Document = document
         self.cursor: Cursor = Cursor()
         self.scroll_line: int = 0  # first visible line
+        # Continuation row at the viewport top; negative values address leading virtual rows.
+        self.scroll_wrap_row: int = 0
+        self.wrap_width: int = width
+        self.wrap_enabled: bool = False
+        self.wrap_tabstop: int = 4
+        self.wrap_insert: bool = False
+        self.wrap_virtual_spans: list[tuple[int, int]] = []
+        self._wrap_rows_cache: tuple[tuple, list[tuple[int, int, int]]] | None = None
         self.scroll_col: int = 0  # first visible column (byte offset)
         # How far *into* the virtual-line block anchored right after scroll_line
         # to start painting, instead of from scroll_line's own content.
@@ -86,6 +94,23 @@ class Window:  # cm:8f2d5b
         """
         self.follow_cursor = True
 
+        if self.wrap_enabled:
+            from peovim.ui.text_layout import set_wrap_top, window_wrap_rows, wrap_top_index, wrapped_cursor_offset
+
+            rows = window_wrap_rows(self, self.wrap_width, self.wrap_tabstop)
+            top = wrap_top_index(self, rows)
+            offset, _ = wrapped_cursor_offset(self, self.wrap_width, self.wrap_tabstop)
+            cursor = top + offset
+            margin = min(int(scrolloff or 0), max(0, (self.height - 1) // 2))
+            if center and not 0 <= offset < self.height:
+                top = cursor - self.height // 2
+            else:
+                top = min(top, cursor - margin)
+                top = max(top, cursor + margin - self.height + 1)
+            set_wrap_top(self, rows, max(0, min(top, len(rows) - 1)))
+            self.scroll_col = 0
+            return
+
         # --- Vertical ---
         so = int(scrolloff if scrolloff is not None else self.options.get("scrolloff", 0))
         target = self.cursor.line
@@ -127,15 +152,30 @@ class Window:  # cm:8f2d5b
     # Snapshot
     # ------------------------------------------------------------------
 
+    def effective_options(self, global_options: dict | None = None) -> dict:
+        """Resolve global settings, filetype defaults, then explicit window overrides."""
+        opts = dict(global_options) if global_options else {}
+        filetypes = {ft.strip() for ft in str(opts.get("wrapfiletypes", "")).split(",") if ft.strip()}
+        if self.document.filetype and self.document.filetype in filetypes:
+            opts["wrap"] = True
+        opts.update(self.options)
+        return opts
+
     def snapshot(self, global_options: dict | None = None) -> WindowSnapshot:
         """Produce an immutable snapshot for background threads.
 
         global_options, if provided, is merged as a base layer so that global
         OptionsStore values are visible to the renderer.  Window-local options
-        (set via :set or per-buffer API) take precedence over global defaults.
+        (set via :set or per-buffer API) take precedence over filetype and global defaults.
         """
-        opts = dict(global_options) if global_options else {}
-        opts.update(self.options)  # local overrides global
+        opts = self.effective_options(global_options)
+        opts["_wrap_insert"] = self.wrap_insert
+        if opts.get("wrap") and self.wrap_enabled:
+            from peovim.ui.text_layout import window_wrap_rows, wrap_top_index
+
+            rows = window_wrap_rows(self, self.wrap_width, self.wrap_tabstop)
+            opts["_wrap_row_count"] = len(rows)
+            opts["_wrap_top"] = wrap_top_index(self, rows)
         return WindowSnapshot(
             buffer_snapshot=self.document.snapshot(),
             cursor_line=self.cursor.line,
@@ -147,6 +187,7 @@ class Window:  # cm:8f2d5b
             options=opts,
             closed_folds=tuple(self.folds.closed_folds()),
             scroll_virtual_skip=self.scroll_virtual_skip,
+            scroll_wrap_row=self.scroll_wrap_row,
         )
 
     def __repr__(self) -> str:

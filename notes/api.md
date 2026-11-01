@@ -1375,6 +1375,11 @@ syntax.register_fold_provider(
 options.get(name: str) -> Any          # scope param planned
 options.set(name: str, value: Any) -> None  # scope/buffer/window params planned
 
+# Soft-wrap defaults for selected detected filetypes (window overrides win).
+options.set("wrapfiletypes", "markdown,text")
+options.set("icons", "auto")          # auto (WezTerm), on, off
+options.set("markdownbullets", True)  # display-only Unicode bullets
+
 # Allow plugins to register their own options (appear in :set completion)
 options.define(
     name: str,

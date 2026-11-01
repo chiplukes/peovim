@@ -16,6 +16,11 @@ from dataclasses import dataclass, field
 from peovim.core.style import ColorLike, Style, normalize_color
 from peovim.ui.backend import ATTR_BOLD
 
+MARKDOWN_STYLES = {
+    "markdown.bullet": Style(fg="#F44747"),
+    "markdown.strong": Style(fg="#CBA6F7", attrs=ATTR_BOLD),
+}
+
 # ---------------------------------------------------------------------------
 # Theme dataclass
 # ---------------------------------------------------------------------------
@@ -43,6 +48,8 @@ class Theme:  # cm:3e2a4c
         """
         if group in self.groups:
             return self.groups[group]
+        if group in MARKDOWN_STYLES:
+            return MARKDOWN_STYLES[group]
         if "." in group:
             return self.resolve(group.rsplit(".", 1)[0])
         return Style()

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from peovim.git import color_for_status_entry, marker_for_status_entry
 from peovim.ui.cell_grid import CellGrid
+from peovim.ui.icons import path_icon
 
 if TYPE_CHECKING:
     from peovim.api.editor import EditorAPI
@@ -228,7 +229,12 @@ class _ExplorerController:  # cm:1f4c6a
         if selected_path is None and current is not None and current.value is not None:
             selected_path = pathlib.Path(str(current.value))
         tree.set_nodes(
-            _make_nodes(self._root, expanded_paths=expanded, status_map=_combined_status_map(self._api, self._root))
+            _make_nodes(
+                self._root,
+                expanded_paths=expanded,
+                status_map=_combined_status_map(self._api, self._root),
+                icons=self._api.options.get("icons") or "auto",
+            )
         )
         if selected_path is not None:
             path = selected_path
@@ -484,6 +490,7 @@ def _make_nodes(
     *,
     expanded_paths: set[str] | None = None,
     status_map: dict[str, object] | None = None,
+    icons: str = "auto",
 ) -> list:
     """Build tree nodes for a directory, sorted dirs-first then files."""
     from peovim.ui.tree_view import TreeNode
@@ -512,10 +519,11 @@ def _make_nodes(
         status_entry = status_map.get(str(entry_path.resolve()))
         node = TreeNode(
             label=_node_label(entry.name, str(entry_path), status_map),
+            icon=path_icon(entry_path, directory=True, mode=icons),
             value=str(entry_path),
             fg=color_for_status_entry(status_entry, surface="explorer") if status_entry is not None else None,
             children_fn=lambda p=entry_path, expanded=expanded_paths, statuses=status_map: _make_nodes(  # type: ignore[misc]
-                p, expanded_paths=expanded, status_map=statuses
+                p, expanded_paths=expanded, status_map=statuses, icons=icons
             ),
         )
         node.expanded = str(entry_path) in expanded_paths
@@ -526,6 +534,7 @@ def _make_nodes(
         status_entry = status_map.get(str(entry_path.resolve()))
         node = TreeNode(
             label=_node_label(entry.name, entry.path, status_map),
+            icon=path_icon(entry.path, mode=icons),
             value=str(entry.path),
             fg=color_for_status_entry(status_entry, surface="explorer") if status_entry is not None else None,
             children_fn=None,

@@ -307,6 +307,12 @@ class OverlayPresentationController:
                     scroll_display_col = logical_col_to_display_col(line_text, active_win.scroll_col, tabstop)
                     cursor_display_col = logical_col_to_display_col(line_text, active_win.cursor.col, tabstop)
                     cur_screen_col = rect.x + gutter + (cursor_display_col - scroll_display_col)
+                    if snapshot.options.get("wrap"):
+                        from peovim.ui.text_layout import wrapped_cursor_offset
+
+                        row, col = wrapped_cursor_offset(active_win, active_win.wrap_width, tabstop)
+                        cur_screen_row = rect.y + row
+                        cur_screen_col = rect.x + gutter + col
                     break
             host._completion_popup.render(grid, cur_screen_row, cur_screen_col)
         except Exception as exc:
